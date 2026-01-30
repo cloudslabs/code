@@ -2,6 +2,7 @@ import type { AgentNode, AgentToolActivity, AgentContextSection, ToolCall } from
 import type { ProjectListItem, Project, ProjectMetadata, StoredMessage } from './project.js';
 import type { ContextBudget } from './context.js';
 import type { MemoryEntry } from './memory.js';
+import type { Plan, PlanStep, PlanListItem } from './plan.js';
 
 // Client → Server messages
 export type ClientMessage =
@@ -10,7 +11,13 @@ export type ClientMessage =
   | AgentInterruptMessage
   | ProjectCreateMessage
   | ProjectResumeMessage
-  | ProjectSkipSetupMessage;
+  | ProjectSkipSetupMessage
+  | PlanSendMessage
+  | PlanInterruptMessage
+  | PlanApproveMessage
+  | PlanSaveMessage
+  | PlanCancelMessage
+  | PlanExecuteMessage;
 
 export interface ChatSendMessage {
   type: 'chat:send';
@@ -49,6 +56,40 @@ export interface ProjectSkipSetupMessage {
   type: 'project:skip_setup';
 }
 
+export interface PlanSendMessage {
+  type: 'plan:send';
+  payload: {
+    content: string;
+    model?: string;
+  };
+}
+
+export interface PlanInterruptMessage {
+  type: 'plan:interrupt';
+}
+
+export interface PlanApproveMessage {
+  type: 'plan:approve';
+  payload: {
+    planId: string;
+  };
+}
+
+export interface PlanSaveMessage {
+  type: 'plan:save';
+}
+
+export interface PlanCancelMessage {
+  type: 'plan:cancel';
+}
+
+export interface PlanExecuteMessage {
+  type: 'plan:execute';
+  payload: {
+    planId: string;
+  };
+}
+
 // Server → Client messages
 export type ServerMessage =
   | ChatTokenMessage
@@ -68,14 +109,21 @@ export type ServerMessage =
   | MemoryUpdatedMessage
   | AgentContextMessage
   | ProjectSettingsUpdatedMessage
-  | ProjectSetupCompletedMessage;
+  | ProjectSetupCompletedMessage
+  | PlanUpdatedMessage
+  | PlanStepUpdatedMessage
+  | PlanExecutionStartedMessage
+  | PlanExecutionCompletedMessage
+  | PlanSavedMessage
+  | PlanListMessage
+  | ProjectPlanMessagesMessage;
 
 export interface ChatTokenMessage {
   type: 'chat:token';
   payload: {
     token: string;
     agentId: string;
-    channel?: 'setup' | 'chat';
+    channel?: 'setup' | 'chat' | 'plan';
   };
 }
 
@@ -86,7 +134,7 @@ export interface ChatMessageComplete {
     content: string;
     agentId: string;
     timestamp: number;
-    channel?: 'setup' | 'chat';
+    channel?: 'setup' | 'chat' | 'plan';
   };
 }
 
@@ -95,7 +143,7 @@ export interface ChatErrorMessage {
   payload: {
     message: string;
     code?: string;
-    channel?: 'setup' | 'chat';
+    channel?: 'setup' | 'chat' | 'plan';
   };
 }
 
@@ -148,6 +196,7 @@ export interface ProjectAgentsMessage {
     projectId: string;
     agents: AgentNode[];
     toolCalls: ToolCall[];
+    contextSections?: Record<string, AgentContextSection[]>;
   };
 }
 
@@ -181,6 +230,14 @@ export interface ProjectMessagesMessage {
   };
 }
 
+export interface ProjectPlanMessagesMessage {
+  type: 'project:plan_messages';
+  payload: {
+    projectId: string;
+    messages: StoredMessage[];
+  };
+}
+
 export interface MemoryUpdatedMessage {
   type: 'memory:updated';
   payload: {
@@ -204,6 +261,47 @@ export interface ProjectSetupCompletedMessage {
   type: 'project:setup_completed';
   payload: {
     projectId: string;
+  };
+}
+
+export interface PlanUpdatedMessage {
+  type: 'plan:updated';
+  payload: Plan;
+}
+
+export interface PlanStepUpdatedMessage {
+  type: 'plan:step_updated';
+  payload: {
+    planId: string;
+    step: PlanStep;
+  };
+}
+
+export interface PlanExecutionStartedMessage {
+  type: 'plan:execution_started';
+  payload: {
+    planId: string;
+  };
+}
+
+export interface PlanExecutionCompletedMessage {
+  type: 'plan:execution_completed';
+  payload: {
+    planId: string;
+    status: 'completed' | 'failed';
+  };
+}
+
+export interface PlanSavedMessage {
+  type: 'plan:saved';
+  payload: Plan;
+}
+
+export interface PlanListMessage {
+  type: 'plan:list';
+  payload: {
+    projectId: string;
+    plans: PlanListItem[];
   };
 }
 

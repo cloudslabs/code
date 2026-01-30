@@ -17,6 +17,7 @@ export interface AgentNode {
   completedAt: number | null;
   model: string | null;
   responseText: string | null;
+  channel?: 'chat' | 'setup' | 'plan';
 }
 
 export interface AgentTree {

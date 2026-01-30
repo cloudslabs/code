@@ -1,4 +1,4 @@
-import type { AgentNode, AgentType, AgentStatus, AgentTree } from '@cloudscode/shared';
+import type { AgentNode, AgentType, AgentStatus, AgentTree, AgentContextSection } from '@cloudscode/shared';
 import { generateId, nowUnix } from '@cloudscode/shared';
 import { broadcast } from '../ws.js';
 import { getDb } from '../db/database.js';
@@ -14,6 +14,7 @@ class AgentManager {
     parentAgentId: string | null = null,
     taskDescription: string | null = null,
     model: string | null = null,
+    channel?: 'chat' | 'setup' | 'plan',
   ): AgentNode {
     const agent: AgentNode = {
       id: generateId(),
@@ -30,6 +31,7 @@ class AgentManager {
       completedAt: null,
       model,
       responseText: null,
+      ...(channel ? { channel } : {}),
     };
 
     this.agents.set(agent.id, agent);
@@ -183,6 +185,60 @@ class AgentManager {
     } catch (err) {
       logger.error({ err, projectId }, 'Failed to load agent history');
       return [];
+    }
+  }
+
+  setAgentContextSections(agentId: string, sections: AgentContextSection[]): void {
+    try {
+      getDb().prepare(
+        `UPDATE agent_runs SET context_sections = ? WHERE id = ?`
+      ).run(JSON.stringify(sections), agentId);
+    } catch (err) {
+      logger.error({ err, agentId }, 'Failed to persist agent context sections');
+    }
+  }
+
+  getAgentHistoryWithContexts(projectId: string): { agents: AgentNode[]; contextSections: Record<string, AgentContextSection[]> } {
+    try {
+      const rows = getDb().prepare(
+        `SELECT id, project_id, agent_type, status, parent_agent_id, task_description, result_summary, cost_usd, tokens, duration_ms, started_at, completed_at, model, response_text, context_sections
+         FROM agent_runs WHERE project_id = ? ORDER BY started_at ASC`
+      ).all(projectId) as any[];
+
+      const agents: AgentNode[] = [];
+      const contextSections: Record<string, AgentContextSection[]> = {};
+
+      for (const r of rows) {
+        agents.push({
+          id: r.id,
+          projectId: r.project_id,
+          type: r.agent_type as AgentType,
+          status: r.status as AgentStatus,
+          parentAgentId: r.parent_agent_id ?? null,
+          taskDescription: r.task_description ?? null,
+          resultSummary: r.result_summary ?? null,
+          costUsd: r.cost_usd ?? 0,
+          tokens: r.tokens ?? 0,
+          durationMs: r.duration_ms ?? null,
+          startedAt: r.started_at,
+          completedAt: r.completed_at ?? null,
+          model: r.model ?? null,
+          responseText: r.response_text ?? null,
+        });
+
+        if (r.context_sections) {
+          try {
+            contextSections[r.id] = JSON.parse(r.context_sections);
+          } catch {
+            // ignore malformed JSON
+          }
+        }
+      }
+
+      return { agents, contextSections };
+    } catch (err) {
+      logger.error({ err, projectId }, 'Failed to load agent history with contexts');
+      return { agents: [], contextSections: {} };
     }
   }
 }

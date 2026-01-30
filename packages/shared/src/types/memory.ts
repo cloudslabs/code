@@ -1,5 +1,7 @@
 export type MemoryCategory = 'architecture' | 'convention' | 'decision' | 'fact' | 'issue';
 
+export type MemoryScope = 'project' | 'workspace';
+
 export interface MemoryEntry {
   id: string;
   workspaceId: string;
@@ -7,6 +9,7 @@ export interface MemoryEntry {
   key: string;
   content: string;
   sourceProjectId: string | null;
+  scope: MemoryScope;
   confidence: number;
   useCount: number;
   createdAt: number;
@@ -22,6 +25,7 @@ export interface CreateMemoryInput {
   category: MemoryCategory;
   key: string;
   content: string;
+  scope?: MemoryScope;
 }
 
 export interface UpdateMemoryInput {
@@ -29,4 +33,5 @@ export interface UpdateMemoryInput {
   key?: string;
   content?: string;
   confidence?: number;
+  scope?: MemoryScope;
 }

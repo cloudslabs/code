@@ -3,7 +3,7 @@ import type { Query, SDKMessage, Options } from '@anthropic-ai/claude-code';
 import Anthropic from '@anthropic-ai/sdk';
 import { createProjectSettingsMcpServer } from './project-settings-mcp.js';
 import type { WebSocket } from 'ws';
-import type { Project, AgentType, AgentContextSection, ProjectMetadata, StoredMessage } from '@cloudscode/shared';
+import type { Project, AgentType, AgentContextSection, ProjectMetadata, StoredMessage, Plan, PlanStep } from '@cloudscode/shared';
 import type { Config } from '../config.js';
 import { getAgentManager } from './agent-manager.js';
 import { createHooksConfig } from './hooks.js';
@@ -17,7 +17,9 @@ import { broadcast, sendTo } from '../ws.js';
 import { logger } from '../logger.js';
 import { runSubAgent, type SubAgentPlan, type SubAgentResult } from './sub-agent-runner.js';
 import { agentDefinitions } from './agent-definitions.js';
-import { MAX_ROUTING_HISTORY_MESSAGES, MAX_ROUTING_MESSAGE_LENGTH } from '@cloudscode/shared';
+import { buildProjectContext } from './context-builder.js';
+import { MAX_ROUTING_HISTORY_MESSAGES, MAX_ROUTING_MESSAGE_LENGTH, generateId, nowUnix } from '@cloudscode/shared';
+import { getPlanManager } from '../plans/plan-manager.js';
 
 // ---------------------------------------------------------------------------
 // System prompts
@@ -105,6 +107,162 @@ Ask these questions **one at a time**, waiting for the user's response before mo
 - If the user says "skip" or wants to skip remaining questions, immediately call \`complete_project_setup\`.
 - Save answers immediately using the appropriate tools — don't wait until the end.
 - Start with a brief welcome message and the first question.`;
+
+// ---------------------------------------------------------------------------
+// Plan mode system prompt
+// ---------------------------------------------------------------------------
+
+const PLAN_SYSTEM_PROMPT = `You are a development planning assistant. Your SOLE purpose is to produce structured development plans. You CANNOT modify code, create files, or execute any changes — you can only research and plan.
+
+## Core Rule
+Every conversation in plan mode MUST result in a development plan inside a \`\`\`plan\`\`\` fenced block. This is mandatory — there is no scenario where you do NOT produce a plan.
+
+## Planning Process
+1. If the user's request is clear enough, produce a plan IMMEDIATELY — do not ask unnecessary questions.
+2. If you genuinely need clarification, ask 1-3 concise questions, then produce a draft plan on your next response.
+3. After receiving research results from sub-agents, ALWAYS produce or update the plan.
+4. If the user says "do it", "go ahead", "yes", or similar — produce the plan based on conversation context.
+
+## Plan Output Format
+You MUST output your plan in this exact fenced block format:
+
+\`\`\`plan
+{
+  "title": "Brief plan title",
+  "summary": "One-paragraph summary of what the plan accomplishes",
+  "steps": [
+    {
+      "id": "step-1",
+      "title": "Step title",
+      "description": "Detailed description of what this step does",
+      "agentType": "implementer",
+      "estimatedComplexity": "medium",
+      "dependencies": []
+    },
+    {
+      "id": "step-2",
+      "title": "Another step",
+      "description": "Description...",
+      "agentType": "code-analyst",
+      "estimatedComplexity": "low",
+      "dependencies": ["step-1"]
+    }
+  ]
+}
+\`\`\`
+
+## Rules
+- ALWAYS produce a \`\`\`plan\`\`\` block — this is not optional
+- Each step should be atomic and clearly described
+- Use dependencies to express ordering constraints between steps
+- Valid agentType values: "code-analyst", "implementer", "test-runner", "researcher"
+- You can revise the plan based on user feedback — always output the full revised plan
+- NEVER execute code or make changes — only plan
+- If you don't have enough information, produce a best-effort draft plan and note assumptions`;
+
+// ---------------------------------------------------------------------------
+// Plan routing prompt — read-only agents only
+// ---------------------------------------------------------------------------
+
+function buildPlanRoutingPrompt(project: Project, chatHistory?: StoredMessage[]): string {
+  const planAgents = ['code-analyst', 'researcher'] as const;
+  const agentDescriptions = planAgents
+    .map((type) => `- **${type}**: ${agentDefinitions[type].description}`)
+    .join('\n');
+
+  let historySection = '';
+  if (chatHistory && chatHistory.length > 0) {
+    const truncated = chatHistory.map((m) => {
+      const content = m.content.length > MAX_ROUTING_MESSAGE_LENGTH
+        ? m.content.slice(0, MAX_ROUTING_MESSAGE_LENGTH) + '...'
+        : m.content;
+      return `${m.role}: ${content}`;
+    }).join('\n');
+    historySection = `\n\n## Recent Conversation\n${truncated}`;
+  }
+
+  const projectContext = buildProjectContext(project);
+  const projectContextSection = projectContext
+    ? `\n\n## Project Context\n${projectContext}`
+    : '';
+
+  return `You are a routing agent for plan mode in the project "${project.title ?? 'Untitled'}".
+Project directory: ${project.directoryPath ?? '(not set)'}
+Project purpose: ${project.purpose ?? 'General development'}
+${projectContextSection}
+
+Your job is to analyze the user's message and decide how to handle it. In plan mode, only READ-ONLY agents are available.
+
+## Available Sub-Agents (Read-Only)
+${agentDescriptions}
+${historySection}
+
+## Routing Rules
+- The goal of plan mode is ALWAYS to produce a development plan. Every response should work toward that goal.
+- For clarifying questions or when you can produce a plan directly from context: use planResponse.
+- For code exploration or analysis questions: delegate to code-analyst.
+- For external documentation or research needs: delegate to researcher.
+- For complex questions needing both: delegate to both agents (they run in parallel).
+- NEVER delegate to implementer or test-runner — they are not available in plan mode.
+- If the user says "do it", "go ahead", "yes", or similar: produce a plan from conversation context using planResponse.
+
+## Response Format
+Respond with valid JSON:
+
+**Plan response** (clarifying questions, or producing a plan directly):
+\`\`\`json
+{"planResponse": "Your response text here — ask clarifying questions OR include a \`\`\`plan\`\`\` block"}
+\`\`\`
+
+**Delegate to agents** (need research before planning):
+\`\`\`json
+{
+  "agents": [
+    {"agentType": "code-analyst", "taskDescription": "..."},
+    {"agentType": "researcher", "taskDescription": "..."}
+  ],
+  "synthesisHint": "Brief note on combining results"
+}
+\`\`\`
+
+Respond ONLY with JSON.`;
+}
+
+// ---------------------------------------------------------------------------
+// Plan synthesis prompt
+// ---------------------------------------------------------------------------
+
+function buildPlanSynthesisPrompt(
+  project: Project,
+  userMessage: string,
+  results: SubAgentResult[],
+  synthesisHint: string,
+): string {
+  const resultSections = results
+    .map((r) => `### ${r.agentType} (${r.status})\n${r.responseText || '(no output)'}`)
+    .join('\n\n');
+
+  const projectContext = buildProjectContext(project);
+  const projectContextSection = projectContext
+    ? `\n\n## Project Context\n${projectContext}`
+    : '';
+
+  return `You are synthesizing results from read-only sub-agents for plan mode in the project "${project.title ?? 'Untitled'}".
+Project directory: ${project.directoryPath ?? '(not set)'}
+${projectContextSection}
+
+The user asked: "${userMessage}"
+
+## Sub-Agent Results
+${resultSections}
+
+## Synthesis Instructions
+${synthesisHint || 'Combine the results into a clear, coherent response for the user.'}
+
+You MUST produce a development plan based on the research results. Output the plan inside a \`\`\`plan\`\`\` fenced block with the standard JSON format (title, summary, steps). Each step needs: id, title, description, agentType, estimatedComplexity, dependencies.
+
+If the research is insufficient to produce a complete plan, produce a best-effort draft plan noting assumptions, and explain what additional information is needed.`;
+}
 
 // ---------------------------------------------------------------------------
 // Setup progress — builds context-aware progress for setup resumption
@@ -266,6 +424,10 @@ interface DirectRouteResponse {
   directResponse: string;
 }
 
+interface PlanRouteResponse {
+  planResponse: string;
+}
+
 interface DelegateRouteResponse {
   agents: Array<{
     agentType: Exclude<AgentType, 'orchestrator'>;
@@ -274,10 +436,15 @@ interface DelegateRouteResponse {
   synthesisHint?: string;
 }
 
-type RouteResponse = DirectRouteResponse | DelegateRouteResponse;
+type RouteResponse = DirectRouteResponse | PlanRouteResponse | DelegateRouteResponse;
 
-function isDirectResponse(r: RouteResponse): r is DirectRouteResponse {
-  return 'directResponse' in r;
+function isDirectResponse(r: RouteResponse): r is DirectRouteResponse | PlanRouteResponse {
+  return 'directResponse' in r || 'planResponse' in r;
+}
+
+function getDirectResponseText(r: DirectRouteResponse | PlanRouteResponse): string {
+  if ('planResponse' in r) return r.planResponse;
+  return r.directResponse;
 }
 
 // ---------------------------------------------------------------------------
@@ -293,6 +460,12 @@ class Orchestrator {
   private anthropic: Anthropic | null = null;
   private subAgentAbortControllers = new Map<string, AbortController>();
 
+  // Plan mode state
+  private planModeActive = false;
+  private currentPlan: Plan | null = null;
+  private planAbortController: AbortController | null = null;
+  private planSubAgentAbortControllers = new Map<string, AbortController>();
+
   constructor(config: Config) {
     this.config = config;
   }
@@ -303,11 +476,126 @@ class Orchestrator {
 
   setProject(project: Project): void {
     this.currentProject = project;
+    // Reset plan state on project switch
+    this.planModeActive = false;
+    this.currentPlan = null;
+    this.planAbortController = null;
+    this.planSubAgentAbortControllers.clear();
     logger.info({ projectId: project.id }, 'Orchestrator project set');
   }
 
   getProject(): Project | null {
     return this.currentProject;
+  }
+
+  // =========================================================================
+  // Plan mode public API
+  // =========================================================================
+
+  setPlanMode(active: boolean): void {
+    this.planModeActive = active;
+    if (!active) {
+      this.currentPlan = null;
+    }
+    logger.info({ planModeActive: active }, 'Plan mode toggled');
+  }
+
+  isPlanMode(): boolean {
+    return this.planModeActive;
+  }
+
+  getCurrentPlan(): Plan | null {
+    return this.currentPlan;
+  }
+
+  async handlePlanMessage(content: string, ws: WebSocket, opts?: { model?: string }): Promise<void> {
+    const model = opts?.model ?? 'sonnet';
+
+    if (!this.planModeActive) {
+      this.setPlanMode(true);
+    }
+
+    if (!hasValidAuth()) {
+      sendTo(ws, {
+        type: 'chat:error',
+        payload: { message: 'Not authenticated.', channel: 'plan' },
+      });
+      return;
+    }
+
+    if (!this.currentProject) {
+      sendTo(ws, {
+        type: 'chat:error',
+        payload: { message: 'No active project.', channel: 'plan' },
+      });
+      return;
+    }
+
+    const project = this.currentProject;
+
+    // Persist the user's plan message
+    const projectManager = getProjectManager();
+    projectManager.addMessage(project.id, 'user', content, undefined, 'plan');
+
+    return this.handlePlanMode(content, ws, project, model);
+  }
+
+  async approvePlan(planId: string, ws: WebSocket): Promise<void> {
+    const plan = this.currentPlan?.id === planId ? this.currentPlan : getPlanManager().getPlan(planId);
+    if (!plan) {
+      sendTo(ws, { type: 'chat:error', payload: { message: 'Plan not found' } });
+      return;
+    }
+    return this.executePlan(plan, ws);
+  }
+
+  async executeSavedPlan(planId: string, ws: WebSocket): Promise<void> {
+    const plan = getPlanManager().getPlan(planId);
+    if (!plan) {
+      sendTo(ws, { type: 'chat:error', payload: { message: 'Plan not found' } });
+      return;
+    }
+    return this.executePlan(plan, ws);
+  }
+
+  async savePlan(): Promise<Plan | null> {
+    if (!this.currentPlan) return null;
+
+    const planManager = getPlanManager();
+    if (this.currentPlan.status === 'drafting') {
+      planManager.updatePlan(this.currentPlan.id, { status: 'ready' });
+      this.currentPlan.status = 'ready';
+    } else {
+      planManager.updatePlan(this.currentPlan.id, {
+        steps: this.currentPlan.steps,
+        status: this.currentPlan.status,
+      });
+    }
+
+    broadcast({ type: 'plan:saved', payload: this.currentPlan });
+    return this.currentPlan;
+  }
+
+  interruptPlan(): void {
+    if (this.planAbortController) {
+      this.planAbortController.abort();
+      logger.info('Plan query interrupted');
+    }
+    for (const [id, controller] of this.planSubAgentAbortControllers) {
+      controller.abort();
+      this.planSubAgentAbortControllers.delete(id);
+    }
+  }
+
+  cancelPlan(): void {
+    this.interruptPlan();
+    if (this.currentPlan) {
+      const planManager = getPlanManager();
+      planManager.updatePlan(this.currentPlan.id, { status: 'cancelled' });
+      this.currentPlan.status = 'cancelled';
+      broadcast({ type: 'plan:updated', payload: this.currentPlan });
+    }
+    this.setPlanMode(false);
   }
 
   private getAnthropicClient(): Anthropic {
@@ -570,6 +858,9 @@ class Orchestrator {
         },
       });
 
+      // Persist context sections to database
+      agentManager.setAgentContextSections(orchestratorNode.id, orchestratorSections);
+
       const routeResponse = await this.routeMessage(content, project, recentMessages, signal, model);
 
       if (signal.aborted) {
@@ -581,7 +872,7 @@ class Orchestrator {
       // Direct response — no agents needed
       // =====================================================================
       if (isDirectResponse(routeResponse)) {
-        const responseText = routeResponse.directResponse;
+        const responseText = getDirectResponseText(routeResponse);
 
         // Stream the response
         broadcast({
@@ -872,7 +1163,7 @@ class Orchestrator {
   // Shared helpers
   // =========================================================================
 
-  private processMessage(message: SDKMessage, orchestratorId: string, ws: WebSocket, channel?: 'setup' | 'chat'): void {
+  private processMessage(message: SDKMessage, orchestratorId: string, ws: WebSocket, channel?: 'setup' | 'chat' | 'plan'): void {
     switch (message.type) {
       case 'stream_event': {
         const event = (message as any).event;
@@ -933,6 +1224,383 @@ class Orchestrator {
     }
 
     return env;
+  }
+
+  // =========================================================================
+  // Plan mode — private implementation
+  // =========================================================================
+
+  private async handlePlanMode(content: string, ws: WebSocket, project: Project, model: string): Promise<void> {
+    const agentManager = getAgentManager();
+    const projectManager = getProjectManager();
+
+    const orchestratorNode = agentManager.createAgent(project.id, 'orchestrator', null, null, model, 'plan');
+    this.currentAgentNodeId = orchestratorNode.id;
+    this.planAbortController = new AbortController();
+    const signal = this.planAbortController.signal;
+
+    try {
+      // Phase 1: Route through plan-specific routing (read-only agents only)
+      logger.info({ projectId: project.id }, 'Plan mode: routing');
+
+      const recentMessages = projectManager.getRecentMessages(project.id, MAX_ROUTING_HISTORY_MESSAGES, 'plan');
+      const routeResponse = await this.routePlanMessage(content, project, recentMessages, signal, model);
+
+      if (signal.aborted) {
+        agentManager.updateAgentStatus(orchestratorNode.id, 'interrupted');
+        return;
+      }
+
+      // Direct/plan response
+      if (isDirectResponse(routeResponse)) {
+        const responseText = getDirectResponseText(routeResponse);
+
+        broadcast({
+          type: 'chat:message',
+          payload: {
+            role: 'assistant',
+            content: responseText,
+            agentId: orchestratorNode.id,
+            timestamp: Date.now(),
+            channel: 'plan',
+          },
+        });
+
+        agentManager.setAgentResponse(orchestratorNode.id, responseText);
+        agentManager.updateAgentStatus(orchestratorNode.id, 'completed', responseText.slice(0, 500));
+
+        // Persist assistant plan message
+        projectManager.addMessage(project.id, 'assistant', responseText, orchestratorNode.id, 'plan');
+
+        // Try to extract a plan from direct responses too
+        this.tryExtractPlan(responseText, project);
+
+        return;
+      }
+
+      // Phase 2: Execute read-only sub-agents in PARALLEL
+      logger.info({ projectId: project.id, agentCount: routeResponse.agents.length }, 'Plan mode: executing sub-agents in parallel');
+
+      const cwd = project.directoryPath ?? this.config.PROJECT_ROOT;
+      const agentPromises = routeResponse.agents.map(async (agentPlan) => {
+        if (signal.aborted) {
+          return null;
+        }
+
+        const plan: SubAgentPlan = {
+          agentType: agentPlan.agentType,
+          taskDescription: agentPlan.taskDescription,
+          model,
+        };
+
+        const preCreatedAgentNode = agentManager.createAgent(
+          project.id,
+          plan.agentType,
+          orchestratorNode.id,
+          plan.taskDescription,
+          plan.model ?? null,
+          'plan',
+        );
+        const agentAbortController = new AbortController();
+        this.planSubAgentAbortControllers.set(preCreatedAgentNode.id, agentAbortController);
+
+        const result = await runSubAgent(plan, project, orchestratorNode.id, signal, cwd, {
+          preCreatedAgentNode,
+          agentAbortController,
+          channel: 'plan',
+        });
+
+        this.planSubAgentAbortControllers.delete(preCreatedAgentNode.id);
+        return result;
+      });
+
+      const rawResults = await Promise.all(agentPromises);
+      const results = rawResults.filter((r): r is SubAgentResult => r !== null);
+
+      if (signal.aborted) {
+        agentManager.updateAgentStatus(orchestratorNode.id, 'interrupted');
+        return;
+      }
+
+      // Phase 3: Synthesize with plan-aware prompt
+      let finalResponse: string;
+      const successfulResults = results.filter((r) => r.responseText);
+
+      if (successfulResults.length === 0) {
+        finalResponse = 'The sub-agents did not produce output. Could you provide more details about what you want to plan?';
+      } else if (successfulResults.length === 1) {
+        finalResponse = successfulResults[0].responseText;
+      } else {
+        logger.info({ projectId: project.id }, 'Plan mode: synthesizing results');
+
+        finalResponse = await this.synthesizePlanResults(
+          content,
+          project,
+          successfulResults,
+          routeResponse.synthesisHint ?? '',
+          signal,
+          model,
+        );
+
+        if (signal.aborted) {
+          agentManager.updateAgentStatus(orchestratorNode.id, 'interrupted');
+          return;
+        }
+      }
+
+      // Broadcast synthesized response via plan channel
+      broadcast({
+        type: 'chat:message',
+        payload: {
+          role: 'assistant',
+          content: finalResponse,
+          agentId: orchestratorNode.id,
+          timestamp: Date.now(),
+          channel: 'plan',
+        },
+      });
+
+      agentManager.setAgentResponse(orchestratorNode.id, finalResponse);
+      agentManager.updateAgentStatus(orchestratorNode.id, 'completed', finalResponse.slice(0, 500));
+
+      // Persist assistant plan message
+      projectManager.addMessage(project.id, 'assistant', finalResponse, orchestratorNode.id, 'plan');
+
+      // Try to extract a plan from the response
+      this.tryExtractPlan(finalResponse, project);
+
+    } catch (err) {
+      logger.error({ err }, 'Plan mode error');
+      agentManager.updateAgentStatus(orchestratorNode.id, 'failed');
+      sendTo(ws, {
+        type: 'chat:error',
+        payload: { message: err instanceof Error ? err.message : 'Plan query failed', channel: 'plan' },
+      });
+    } finally {
+      this.planAbortController = null;
+      this.planSubAgentAbortControllers.clear();
+    }
+  }
+
+  private async routePlanMessage(content: string, project: Project, chatHistory: StoredMessage[], signal: AbortSignal, model: string = 'sonnet'): Promise<RouteResponse> {
+    const client = this.getAnthropicClient();
+    const routingPrompt = buildPlanRoutingPrompt(project, chatHistory);
+
+    try {
+      const response = await client.messages.create({
+        model: resolveModelId(model),
+        max_tokens: 1024,
+        system: routingPrompt,
+        messages: [{ role: 'user', content }],
+      });
+
+      if (signal.aborted) {
+        return { directResponse: '' };
+      }
+
+      let responseText = '';
+      for (const block of response.content) {
+        if (block.type === 'text') {
+          responseText += block.text;
+        }
+      }
+
+      const jsonStr = responseText.replace(/```json\s*\n?/g, '').replace(/```\s*$/g, '').trim();
+      const parsed = JSON.parse(jsonStr) as RouteResponse;
+
+      if (isDirectResponse(parsed)) {
+        return parsed;
+      }
+
+      // Only allow read-only agent types in plan mode
+      const readOnlyTypes = new Set<string>(['code-analyst', 'researcher']);
+      const validatedAgents = parsed.agents.filter((a) => readOnlyTypes.has(a.agentType));
+
+      if (validatedAgents.length === 0) {
+        return { directResponse: responseText };
+      }
+
+      return {
+        agents: validatedAgents,
+        synthesisHint: parsed.synthesisHint,
+      };
+    } catch (err) {
+      logger.error({ err }, 'Plan routing API call failed');
+      return {
+        agents: [{
+          agentType: 'code-analyst',
+          taskDescription: content,
+        }],
+      };
+    }
+  }
+
+  private async synthesizePlanResults(
+    userMessage: string,
+    project: Project,
+    results: SubAgentResult[],
+    synthesisHint: string,
+    signal: AbortSignal,
+    model: string = 'sonnet',
+  ): Promise<string> {
+    const client = this.getAnthropicClient();
+    const prompt = buildPlanSynthesisPrompt(project, userMessage, results, synthesisHint);
+
+    try {
+      const response = await client.messages.create({
+        model: resolveModelId(model),
+        max_tokens: 4096,
+        system: PLAN_SYSTEM_PROMPT,
+        messages: [{ role: 'user', content: prompt }],
+      });
+
+      if (signal.aborted) {
+        return results.map((r) => r.responseText).join('\n\n');
+      }
+
+      let responseText = '';
+      for (const block of response.content) {
+        if (block.type === 'text') {
+          responseText += block.text;
+        }
+      }
+
+      return responseText || results.map((r) => r.responseText).join('\n\n');
+    } catch (err) {
+      logger.error({ err }, 'Plan synthesis API call failed');
+      return results.map((r) => `## ${r.agentType}\n${r.responseText}`).join('\n\n');
+    }
+  }
+
+  private tryExtractPlan(responseText: string, project: Project): void {
+    const planMatch = responseText.match(/```plan\s*\n([\s\S]*?)\n```/);
+    if (!planMatch) return;
+
+    try {
+      const planData = JSON.parse(planMatch[1]);
+      const planManager = getPlanManager();
+
+      // Add status: 'pending' to each step if not present
+      const steps: PlanStep[] = (planData.steps || []).map((s: any) => ({
+        id: s.id || generateId(),
+        title: s.title,
+        description: s.description,
+        agentType: s.agentType,
+        status: 'pending' as const,
+        dependencies: s.dependencies || [],
+        estimatedComplexity: s.estimatedComplexity,
+      }));
+
+      const plan = planManager.createPlan({
+        projectId: project.id,
+        title: planData.title || 'Untitled Plan',
+        summary: planData.summary || '',
+        steps,
+        status: 'ready',
+      });
+
+      this.currentPlan = plan;
+      broadcast({ type: 'plan:updated', payload: plan });
+      logger.info({ planId: plan.id, stepCount: plan.steps.length }, 'Plan extracted from response');
+
+      // Notify the user the plan is ready for review
+      broadcast({
+        type: 'chat:message',
+        payload: {
+          role: 'assistant',
+          content: `Plan "${plan.title}" is ready with ${plan.steps.length} step${plan.steps.length === 1 ? '' : 's'}. You can approve & execute it, save it for later, or ask me to revise it.`,
+          agentId: 'system',
+          timestamp: Date.now(),
+          channel: 'plan',
+        },
+      });
+    } catch (err) {
+      logger.error({ err }, 'Failed to parse plan from response');
+    }
+  }
+
+  private async executePlan(plan: Plan, ws: WebSocket): Promise<void> {
+    if (!this.currentProject) {
+      sendTo(ws, { type: 'chat:error', payload: { message: 'No active project' } });
+      return;
+    }
+
+    const project = this.currentProject;
+    const planManager = getPlanManager();
+
+    // Set plan status to executing
+    plan.status = 'executing';
+    planManager.updatePlan(plan.id, { status: 'executing' });
+    broadcast({ type: 'plan:updated', payload: plan });
+    broadcast({ type: 'plan:execution_started', payload: { planId: plan.id } });
+
+    // Exit plan mode
+    this.setPlanMode(false);
+
+    // Build execution order respecting dependencies (topological sort)
+    const executionOrder = this.buildExecutionOrder(plan.steps);
+
+    let allSucceeded = true;
+
+    for (const step of executionOrder) {
+      // Update step to in_progress
+      step.status = 'in_progress';
+      planManager.updatePlanStep(plan.id, step);
+      broadcast({ type: 'plan:step_updated', payload: { planId: plan.id, step } });
+
+      try {
+        // Execute the step through normal mode
+        await this.handleNormalMode(
+          `[Plan Step ${step.id}] ${step.title}\n\n${step.description}`,
+          ws,
+          project,
+          'sonnet',
+        );
+
+        step.status = 'completed';
+      } catch (err) {
+        logger.error({ err, stepId: step.id }, 'Plan step execution failed');
+        step.status = 'failed';
+        allSucceeded = false;
+      }
+
+      planManager.updatePlanStep(plan.id, step);
+      broadcast({ type: 'plan:step_updated', payload: { planId: plan.id, step } });
+
+      if (step.status === 'failed') {
+        // Skip remaining dependent steps
+        break;
+      }
+    }
+
+    // Update plan final status
+    const finalStatus = allSucceeded ? 'completed' : 'failed';
+    plan.status = finalStatus;
+    planManager.updatePlan(plan.id, { status: finalStatus });
+    broadcast({ type: 'plan:updated', payload: plan });
+    broadcast({ type: 'plan:execution_completed', payload: { planId: plan.id, status: finalStatus } });
+  }
+
+  private buildExecutionOrder(steps: PlanStep[]): PlanStep[] {
+    const stepMap = new Map(steps.map((s) => [s.id, s]));
+    const visited = new Set<string>();
+    const ordered: PlanStep[] = [];
+
+    const visit = (step: PlanStep) => {
+      if (visited.has(step.id)) return;
+      visited.add(step.id);
+      for (const depId of step.dependencies ?? []) {
+        const dep = stepMap.get(depId);
+        if (dep) visit(dep);
+      }
+      ordered.push(step);
+    };
+
+    for (const step of steps) {
+      visit(step);
+    }
+
+    return ordered;
   }
 
   interrupt(): void {

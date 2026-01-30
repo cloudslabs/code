@@ -1,4 +1,4 @@
-import type { MemoryEntry, MemoryCategory, MemorySearchResult, CreateMemoryInput, UpdateMemoryInput } from '@cloudscode/shared';
+import type { MemoryEntry, MemoryCategory, MemoryScope, MemorySearchResult, CreateMemoryInput, UpdateMemoryInput } from '@cloudscode/shared';
 import { generateId, nowUnix } from '@cloudscode/shared';
 import { getDb } from '../db/database.js';
 import { logger } from '../logger.js';
@@ -6,6 +6,7 @@ import { logger } from '../logger.js';
 class MemoryStore {
   create(workspaceId: string, input: CreateMemoryInput, sourceProjectId?: string): MemoryEntry {
     const db = getDb();
+    const scope: MemoryScope = input.scope ?? 'workspace';
     const entry: MemoryEntry = {
       id: generateId(),
       workspaceId,
@@ -13,6 +14,7 @@ class MemoryStore {
       key: input.key,
       content: input.content,
       sourceProjectId: sourceProjectId ?? null,
+      scope,
       confidence: 1.0,
       useCount: 0,
       createdAt: nowUnix(),
@@ -20,15 +22,15 @@ class MemoryStore {
     };
 
     db.prepare(`
-      INSERT INTO memory_entries (id, workspace_id, category, key, content, source_project_id, confidence, use_count, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO memory_entries (id, workspace_id, category, key, content, source_project_id, scope, confidence, use_count, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       entry.id, entry.workspaceId, entry.category, entry.key,
-      entry.content, entry.sourceProjectId, entry.confidence,
+      entry.content, entry.sourceProjectId, entry.scope, entry.confidence,
       entry.useCount, entry.createdAt, entry.updatedAt,
     );
 
-    logger.info({ id: entry.id, category: entry.category, key: entry.key }, 'Memory entry created');
+    logger.info({ id: entry.id, category: entry.category, key: entry.key, scope: entry.scope }, 'Memory entry created');
     return entry;
   }
 
@@ -59,6 +61,10 @@ class MemoryStore {
       sets.push('confidence = ?');
       values.push(input.confidence);
     }
+    if (input.scope !== undefined) {
+      sets.push('scope = ?');
+      values.push(input.scope);
+    }
 
     values.push(id);
     db.prepare(`UPDATE memory_entries SET ${sets.join(', ')} WHERE id = ?`).run(...values);
@@ -81,6 +87,24 @@ class MemoryStore {
     return (db.prepare(
       'SELECT * FROM memory_entries WHERE workspace_id = ? ORDER BY updated_at DESC',
     ).all(workspaceId) as any[]).map(this.rowToEntry);
+  }
+
+  listByProject(workspaceId: string, projectId: string, category?: MemoryCategory): MemoryEntry[] {
+    const db = getDb();
+    if (category) {
+      return (db.prepare(
+        `SELECT * FROM memory_entries
+         WHERE workspace_id = ? AND category = ?
+           AND (scope = 'workspace' OR (scope = 'project' AND source_project_id = ?))
+         ORDER BY updated_at DESC`,
+      ).all(workspaceId, category, projectId) as any[]).map(this.rowToEntry);
+    }
+    return (db.prepare(
+      `SELECT * FROM memory_entries
+       WHERE workspace_id = ?
+         AND (scope = 'workspace' OR (scope = 'project' AND source_project_id = ?))
+       ORDER BY updated_at DESC`,
+    ).all(workspaceId, projectId) as any[]).map(this.rowToEntry);
   }
 
   search(workspaceId: string, queryText: string, limit: number = 10): MemorySearchResult[] {
@@ -109,6 +133,40 @@ class MemoryStore {
     `).all(sanitized, workspaceId, limit) as any[];
 
     // Increment use counts
+    for (const row of rows) {
+      db.prepare('UPDATE memory_entries SET use_count = use_count + 1 WHERE id = ?').run(row.id);
+    }
+
+    return rows.map((row) => ({
+      entry: this.rowToEntry(row),
+      rank: row.rank,
+    }));
+  }
+
+  searchByProject(workspaceId: string, projectId: string, queryText: string, limit: number = 10): MemorySearchResult[] {
+    const db = getDb();
+
+    const sanitized = queryText
+      .replace(/[?*+\-"(){}[\]^~:\\/<>!@#$%&=|;,]/g, ' ')
+      .split(/\s+/)
+      .filter((t) => t.length > 0)
+      .map((t) => `"${t}"`)
+      .join(' OR ');
+
+    if (!sanitized) {
+      return [];
+    }
+
+    const rows = db.prepare(`
+      SELECT me.*, rank
+      FROM memory_fts
+      JOIN memory_entries me ON memory_fts.rowid = me.rowid
+      WHERE memory_fts MATCH ? AND me.workspace_id = ?
+        AND (me.scope = 'workspace' OR (me.scope = 'project' AND me.source_project_id = ?))
+      ORDER BY rank
+      LIMIT ?
+    `).all(sanitized, workspaceId, projectId, limit) as any[];
+
     for (const row of rows) {
       db.prepare('UPDATE memory_entries SET use_count = use_count + 1 WHERE id = ?').run(row.id);
     }
@@ -148,6 +206,7 @@ class MemoryStore {
       key: row.key,
       content: row.content,
       sourceProjectId: row.source_project_id,
+      scope: (row.scope ?? 'workspace') as MemoryScope,
       confidence: row.confidence,
       useCount: row.use_count,
       createdAt: row.created_at,

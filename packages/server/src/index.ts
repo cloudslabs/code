@@ -6,6 +6,7 @@ import { initWebSocket } from './ws.js';
 import { initDatabase, closeDatabase } from './db/database.js';
 import { initProjectManager } from './projects/project-manager.js';
 import { initOrchestrator } from './agents/orchestrator.js';
+import { initPlanManager } from './plans/plan-manager.js';
 import { initContextManager } from './context/context-manager.js';
 import { initMemoryStore } from './context/memory-store.js';
 import { initWorkspaceFiles } from './workspace/workspace-files.js';
@@ -25,6 +26,7 @@ async function main(): Promise<void> {
   initContextManager();
   await initWorkspaceFiles(config.PROJECT_ROOT);
   initOrchestrator(config);
+  initPlanManager();
 
   // Ensure a default workspace exists for the project root
   const path = await import('node:path');

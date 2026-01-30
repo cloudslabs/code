@@ -363,6 +363,102 @@ const migrations = [
       ALTER TABLE agent_runs ADD COLUMN response_text TEXT;
     `,
   },
+  {
+    name: '010_agent_context_sections',
+    sql: `
+      ALTER TABLE agent_runs ADD COLUMN context_sections TEXT;
+    `,
+  },
+  {
+    name: '011_memory_scope',
+    sql: `
+      ALTER TABLE memory_entries ADD COLUMN scope TEXT NOT NULL DEFAULT 'workspace';
+      CREATE INDEX idx_memory_scope ON memory_entries(workspace_id, scope);
+      CREATE INDEX idx_memory_source_project ON memory_entries(source_project_id);
+    `,
+  },
+  {
+    name: '012_plans',
+    sql: `
+      CREATE TABLE plans (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id),
+        title TEXT NOT NULL,
+        summary TEXT NOT NULL DEFAULT '',
+        steps TEXT NOT NULL DEFAULT '[]',
+        status TEXT NOT NULL DEFAULT 'drafting',
+        created_at INTEGER DEFAULT (unixepoch()),
+        updated_at INTEGER DEFAULT (unixepoch())
+      );
+      CREATE INDEX idx_plans_project ON plans(project_id);
+      CREATE INDEX idx_plans_status ON plans(status);
+    `,
+  },
+  {
+    name: '013_users',
+    sql: `
+      -- Users table
+      CREATE TABLE users (
+        id TEXT PRIMARY KEY,
+        username TEXT NOT NULL UNIQUE,
+        email TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        display_name TEXT,
+        avatar_url TEXT,
+        subscription_type TEXT DEFAULT 'free',
+        is_active INTEGER DEFAULT 1,
+        is_admin INTEGER DEFAULT 0,
+        last_login_at INTEGER,
+        created_at INTEGER DEFAULT (unixepoch()),
+        updated_at INTEGER DEFAULT (unixepoch())
+      );
+
+      -- User sessions for authentication
+      CREATE TABLE user_sessions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id),
+        token_hash TEXT NOT NULL,
+        expires_at INTEGER NOT NULL,
+        created_at INTEGER DEFAULT (unixepoch())
+      );
+
+      -- API keys for programmatic access
+      CREATE TABLE user_api_keys (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id),
+        name TEXT NOT NULL,
+        key_hash TEXT NOT NULL,
+        permissions TEXT DEFAULT '{}',
+        is_active INTEGER DEFAULT 1,
+        last_used_at INTEGER,
+        expires_at INTEGER,
+        created_at INTEGER DEFAULT (unixepoch())
+      );
+
+      -- Add user_id column to existing tables
+      ALTER TABLE workspaces ADD COLUMN user_id TEXT REFERENCES users(id);
+      ALTER TABLE projects ADD COLUMN user_id TEXT REFERENCES users(id);
+      ALTER TABLE memory_entries ADD COLUMN user_id TEXT REFERENCES users(id);
+
+      -- Create indexes
+      CREATE INDEX idx_users_username ON users(username);
+      CREATE INDEX idx_users_email ON users(email);
+      CREATE INDEX idx_user_sessions_user ON user_sessions(user_id);
+      CREATE INDEX idx_user_sessions_token ON user_sessions(token_hash);
+      CREATE INDEX idx_user_api_keys_user ON user_api_keys(user_id);
+      CREATE INDEX idx_user_api_keys_key ON user_api_keys(key_hash);
+      CREATE INDEX idx_workspaces_user ON workspaces(user_id);
+      CREATE INDEX idx_projects_user ON projects(user_id);
+      CREATE INDEX idx_memory_user ON memory_entries(user_id);
+    `,
+  },
+  {
+    name: '014_message_channel',
+    sql: `
+      ALTER TABLE messages ADD COLUMN channel TEXT DEFAULT 'chat';
+      CREATE INDEX idx_messages_channel ON messages(project_id, channel);
+    `,
+  },
 ];
 
 export function closeDatabase(): void {

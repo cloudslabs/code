@@ -75,16 +75,20 @@ class ContextManager {
     return budget.costUsd >= budget.maxBudgetUsd;
   }
 
-  getMemoryContext(workspaceId: string, currentPrompt: string): string | null {
+  getMemoryContext(workspaceId: string, currentPrompt: string, projectId?: string): string | null {
     try {
       const memoryStore = getMemoryStore();
 
-      // Search for relevant memories
-      const results = memoryStore.search(workspaceId, currentPrompt, MAX_MEMORY_INJECTION_ENTRIES);
+      // Search for relevant memories (project-scoped if projectId provided)
+      const results = projectId
+        ? memoryStore.searchByProject(workspaceId, projectId, currentPrompt, MAX_MEMORY_INJECTION_ENTRIES)
+        : memoryStore.search(workspaceId, currentPrompt, MAX_MEMORY_INJECTION_ENTRIES);
 
       if (results.length === 0) {
         // Fall back to recent entries
-        const recent = memoryStore.listByWorkspace(workspaceId);
+        const recent = projectId
+          ? memoryStore.listByProject(workspaceId, projectId)
+          : memoryStore.listByWorkspace(workspaceId);
         if (recent.length === 0) return null;
         return memoryStore.formatForContext(recent.slice(0, MAX_MEMORY_INJECTION_ENTRIES));
       }

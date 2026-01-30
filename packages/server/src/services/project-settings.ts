@@ -236,7 +236,6 @@ class ProjectSettingsService {
         name: 'Full-Stack TypeScript',
         description: 'Modern full-stack application with TypeScript, React, and Node.js',
         metadata: {
-          primaryLanguage: 'TypeScript',
           architecturePattern: 'layered',
           packageManager: 'pnpm',
           techStack: [
@@ -260,7 +259,6 @@ class ProjectSettingsService {
         name: 'Express API Server',
         description: 'RESTful API server with Express.js and TypeScript',
         metadata: {
-          primaryLanguage: 'TypeScript',
           architecturePattern: 'layered',
           packageManager: 'npm',
           apiEndpoints: [
@@ -280,7 +278,6 @@ class ProjectSettingsService {
         name: 'Next.js Application',
         description: 'Full-stack React application with Next.js',
         metadata: {
-          primaryLanguage: 'TypeScript',
           architecturePattern: 'modular_monolith',
           packageManager: 'npm',
           techStack: [

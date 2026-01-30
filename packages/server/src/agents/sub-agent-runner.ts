@@ -30,6 +30,7 @@ export interface SubAgentPlan {
 export interface SubAgentOptions {
   preCreatedAgentNode?: AgentNode;
   agentAbortController?: AbortController;
+  channel?: 'setup' | 'chat' | 'plan';
 }
 
 /**
@@ -78,6 +79,9 @@ export async function runSubAgent(
     },
   });
 
+  // Persist context sections to database
+  agentManager.setAgentContextSections(agentNode.id, contextPackage.sections);
+
   // Create hooks that attribute tool calls to this sub-agent
   const hooks = createSubAgentHooksConfig(agentNode.id, project.id);
 
@@ -124,7 +128,7 @@ export async function runSubAgent(
         break;
       }
 
-      processSubAgentMessage(message, agentNode.id);
+      processSubAgentMessage(message, agentNode.id, options?.channel);
 
       // Collect response text
       if (message.type === 'assistant' && message.message.content) {
@@ -225,7 +229,7 @@ export async function runSubAgent(
  * Processes SDK messages from a sub-agent, broadcasting streaming tokens
  * attributed to the sub-agent's ID.
  */
-function processSubAgentMessage(message: SDKMessage, agentId: string): void {
+function processSubAgentMessage(message: SDKMessage, agentId: string, channel?: 'setup' | 'chat' | 'plan'): void {
   switch (message.type) {
     case 'stream_event': {
       const event = (message as any).event;
@@ -235,6 +239,7 @@ function processSubAgentMessage(message: SDKMessage, agentId: string): void {
           payload: {
             token: event.delta.text,
             agentId,
+            ...(channel ? { channel } : {}),
           },
         });
       }
@@ -259,6 +264,7 @@ function processSubAgentMessage(message: SDKMessage, agentId: string): void {
             content: textContent,
             agentId,
             timestamp: Date.now(),
+            ...(channel ? { channel } : {}),
           },
         });
       }

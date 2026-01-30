@@ -175,7 +175,7 @@ export class ProjectStore {
     );
   }
 
-  addMessage(projectId: string, role: string, content: string, agentId?: string): StoredMessage {
+  addMessage(projectId: string, role: string, content: string, agentId?: string, channel?: 'chat' | 'setup' | 'plan'): StoredMessage {
     const db = getDb();
     const msg: StoredMessage = {
       id: generateId(),
@@ -183,42 +183,47 @@ export class ProjectStore {
       role: role as 'user' | 'assistant',
       content,
       agentId: agentId ?? null,
+      channel: channel ?? 'chat',
       createdAt: nowUnix(),
     };
     db.prepare(
-      'INSERT INTO messages (id, project_id, role, content, agent_id, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-    ).run(msg.id, msg.projectId, msg.role, msg.content, msg.agentId, msg.createdAt);
+      'INSERT INTO messages (id, project_id, role, content, agent_id, channel, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    ).run(msg.id, msg.projectId, msg.role, msg.content, msg.agentId, msg.channel, msg.createdAt);
     return msg;
   }
 
-  getMessages(projectId: string): StoredMessage[] {
+  getMessages(projectId: string, channel?: 'chat' | 'setup' | 'plan'): StoredMessage[] {
     const db = getDb();
+    const ch = channel ?? 'chat';
     const rows = db.prepare(
-      'SELECT * FROM messages WHERE project_id = ? ORDER BY created_at ASC',
-    ).all(projectId) as any[];
-    return rows.map((r) => ({
-      id: r.id,
-      projectId: r.project_id,
-      role: r.role,
-      content: r.content,
-      agentId: r.agent_id,
-      createdAt: r.created_at,
-    }));
+      'SELECT * FROM messages WHERE project_id = ? AND (channel = ? OR channel IS NULL) ORDER BY created_at ASC',
+    ).all(projectId, ch) as any[];
+    return rows.map((r) => this.rowToMessage(r));
   }
 
-  getRecentMessages(projectId: string, limit: number = 20): StoredMessage[] {
+  getRecentMessages(projectId: string, limit: number = 20, channel?: 'chat' | 'setup' | 'plan'): StoredMessage[] {
     const db = getDb();
+    const ch = channel ?? 'chat';
     const rows = db.prepare(
-      'SELECT * FROM messages WHERE project_id = ? ORDER BY created_at DESC LIMIT ?',
-    ).all(projectId, limit) as any[];
-    return rows.reverse().map((r) => ({
+      'SELECT * FROM messages WHERE project_id = ? AND (channel = ? OR channel IS NULL) ORDER BY created_at DESC LIMIT ?',
+    ).all(projectId, ch, limit) as any[];
+    return rows.reverse().map((r) => this.rowToMessage(r));
+  }
+
+  getPlanMessages(projectId: string): StoredMessage[] {
+    return this.getMessages(projectId, 'plan');
+  }
+
+  private rowToMessage(r: any): StoredMessage {
+    return {
       id: r.id,
       projectId: r.project_id,
       role: r.role,
       content: r.content,
       agentId: r.agent_id,
+      channel: r.channel ?? 'chat',
       createdAt: r.created_at,
-    }));
+    };
   }
 
   setDirectoryPath(projectId: string, dirPath: string): void {

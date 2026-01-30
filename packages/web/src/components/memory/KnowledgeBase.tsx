@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Search, Plus, Trash2, Tag } from 'lucide-react';
-import type { MemoryEntry, MemoryCategory } from '@cloudscode/shared';
+import { Search, Plus, Trash2, Tag, Folder, Globe } from 'lucide-react';
+import type { MemoryEntry, MemoryCategory, MemoryScope } from '@cloudscode/shared';
 import { MEMORY_CATEGORIES } from '@cloudscode/shared';
 import { useProjectStore } from '../../stores/project-store.js';
 import { api } from '../../lib/api-client.js';
 import { MemoryEditor } from './MemoryEditor.js';
+
+type ScopeFilter = 'all' | 'project' | 'workspace';
 
 const categoryColors: Record<MemoryCategory, string> = {
   architecture: 'text-purple-400 bg-purple-400/10',
@@ -14,28 +16,46 @@ const categoryColors: Record<MemoryCategory, string> = {
   issue: 'text-red-400 bg-red-400/10',
 };
 
+const scopeColors: Record<MemoryScope, string> = {
+  project: 'text-cyan-400 bg-cyan-400/10',
+  workspace: 'text-orange-400 bg-orange-400/10',
+};
+
 export function KnowledgeBase() {
-  const projectId = useProjectStore((s) => s.workspaceId);
+  const workspaceId = useProjectStore((s) => s.workspaceId);
+  const activeProject = useProjectStore((s) => s.activeProject);
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<MemoryCategory | ''>('');
+  const [scopeFilter, setScopeFilter] = useState<ScopeFilter>('all');
   const [showEditor, setShowEditor] = useState(false);
   const [editingEntry, setEditingEntry] = useState<MemoryEntry | null>(null);
 
   const loadEntries = useCallback(async () => {
-    if (!projectId) return;
+    if (!workspaceId) return;
     try {
+      // When scope filter is 'project' and we have an active project, use project-scoped API
+      const scopeProjectId = scopeFilter === 'project' && activeProject ? activeProject.id : undefined;
+
       if (search) {
-        const { results } = await api.searchMemory(projectId, search);
-        setEntries(results.map((r: any) => r.entry));
+        const { results } = await api.searchMemory(workspaceId, search, scopeProjectId);
+        let filtered = results.map((r: any) => r.entry);
+        if (scopeFilter === 'workspace') {
+          filtered = filtered.filter((e: MemoryEntry) => e.scope === 'workspace');
+        }
+        setEntries(filtered);
       } else {
-        const { entries } = await api.listMemory(projectId, filter || undefined);
-        setEntries(entries);
+        const { entries } = await api.listMemory(workspaceId, filter || undefined, scopeProjectId);
+        let filtered = entries;
+        if (scopeFilter === 'workspace') {
+          filtered = filtered.filter((e: MemoryEntry) => e.scope === 'workspace');
+        }
+        setEntries(filtered);
       }
     } catch (err) {
       console.error('Failed to load memory:', err);
     }
-  }, [projectId, search, filter]);
+  }, [workspaceId, activeProject, search, filter, scopeFilter]);
 
   useEffect(() => {
     loadEntries();
@@ -56,7 +76,7 @@ export function KnowledgeBase() {
     loadEntries();
   };
 
-  if (!projectId) {
+  if (!workspaceId) {
     return <div className="p-4 text-sm text-zinc-500">No project loaded.</div>;
   }
 
@@ -72,6 +92,21 @@ export function KnowledgeBase() {
           placeholder="Search knowledge..."
           className="w-full pl-9 pr-3 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-sm text-zinc-200 placeholder-zinc-600 focus:outline-none focus:border-zinc-600"
         />
+      </div>
+
+      {/* Scope filter */}
+      <div className="flex gap-1 flex-wrap">
+        {(['all', 'project', 'workspace'] as const).map((s) => (
+          <button
+            key={s}
+            onClick={() => setScopeFilter(s)}
+            className={`px-2 py-1 text-xs rounded flex items-center gap-1 ${scopeFilter === s ? 'bg-zinc-700 text-zinc-200' : 'text-zinc-500 hover:text-zinc-300'}`}
+          >
+            {s === 'project' && <Folder size={10} />}
+            {s === 'workspace' && <Globe size={10} />}
+            {s === 'all' ? 'All' : s === 'project' ? 'Project Only' : 'Shared'}
+          </button>
+        ))}
       </div>
 
       {/* Category filter */}
@@ -108,7 +143,7 @@ export function KnowledgeBase() {
       {/* Editor */}
       {showEditor && (
         <MemoryEditor
-          projectId={projectId}
+          projectId={workspaceId}
           entry={editingEntry}
           onSaved={handleSaved}
           onCancel={() => {
@@ -125,6 +160,10 @@ export function KnowledgeBase() {
             <div className="flex items-center gap-2 mb-1">
               <span className={`px-1.5 py-0.5 text-[10px] rounded capitalize ${categoryColors[entry.category]}`}>
                 {entry.category}
+              </span>
+              <span className={`px-1.5 py-0.5 text-[10px] rounded flex items-center gap-0.5 ${scopeColors[entry.scope]}`}>
+                {entry.scope === 'project' ? <Folder size={8} /> : <Globe size={8} />}
+                {entry.scope === 'project' ? 'Project' : 'Shared'}
               </span>
               <span className="text-xs font-medium text-zinc-300 flex-1 truncate">
                 {entry.key}

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { MemoryEntry, MemoryCategory } from '@cloudscode/shared';
+import type { MemoryEntry, MemoryCategory, MemoryScope } from '@cloudscode/shared';
 import { MEMORY_CATEGORIES } from '@cloudscode/shared';
 import { api } from '../../lib/api-client.js';
 
@@ -14,6 +14,7 @@ export function MemoryEditor({ projectId: workspaceId, entry, onSaved, onCancel 
   const [category, setCategory] = useState<MemoryCategory>(entry?.category ?? 'fact');
   const [key, setKey] = useState(entry?.key ?? '');
   const [content, setContent] = useState(entry?.content ?? '');
+  const [scope, setScope] = useState<MemoryScope>(entry?.scope ?? 'workspace');
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
@@ -21,9 +22,9 @@ export function MemoryEditor({ projectId: workspaceId, entry, onSaved, onCancel 
     setSaving(true);
     try {
       if (entry) {
-        await api.updateMemory(entry.id, { category, key, content });
+        await api.updateMemory(entry.id, { category, key, content, scope });
       } else {
-        await api.createMemory({ workspaceId, category, key, content });
+        await api.createMemory({ workspaceId, category, key, content, scope });
       }
       onSaved();
     } catch (err) {
@@ -46,6 +47,31 @@ export function MemoryEditor({ projectId: workspaceId, entry, onSaved, onCancel 
           </option>
         ))}
       </select>
+
+      <div className="flex gap-2">
+        <label className={`flex items-center gap-1.5 px-2 py-1.5 rounded text-xs cursor-pointer border ${scope === 'workspace' ? 'bg-zinc-700 border-zinc-600 text-zinc-200' : 'bg-zinc-800 border-zinc-700 text-zinc-500'}`}>
+          <input
+            type="radio"
+            name="scope"
+            value="workspace"
+            checked={scope === 'workspace'}
+            onChange={() => setScope('workspace')}
+            className="hidden"
+          />
+          Workspace
+        </label>
+        <label className={`flex items-center gap-1.5 px-2 py-1.5 rounded text-xs cursor-pointer border ${scope === 'project' ? 'bg-zinc-700 border-zinc-600 text-zinc-200' : 'bg-zinc-800 border-zinc-700 text-zinc-500'}`}>
+          <input
+            type="radio"
+            name="scope"
+            value="project"
+            checked={scope === 'project'}
+            onChange={() => setScope('project')}
+            className="hidden"
+          />
+          Project
+        </label>
+      </div>
 
       <input
         type="text"

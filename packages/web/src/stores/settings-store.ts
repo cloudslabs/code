@@ -5,7 +5,7 @@ type AuthType = 'oauth' | 'api_key' | 'none';
 
 interface SettingsState {
   rightPanelOpen: boolean;
-  rightPanelTab: 'agents' | 'context' | 'memory';
+  rightPanelTab: 'agents' | 'plans' | 'context' | 'memory';
   contextBudget: ContextBudget | null;
 
   // Project settings panel
@@ -21,7 +21,7 @@ interface SettingsState {
   settingsModalOpen: boolean;
 
   toggleRightPanel: () => void;
-  setRightPanelTab: (tab: 'agents' | 'context' | 'memory') => void;
+  setRightPanelTab: (tab: 'agents' | 'plans' | 'context' | 'memory') => void;
   setContextBudget: (budget: ContextBudget) => void;
 
   openProjectSettings: () => void;

@@ -608,6 +608,7 @@ export interface StoredMessage {
   role: 'user' | 'assistant';
   content: string;
   agentId: string | null;
+  channel?: 'chat' | 'setup' | 'plan';
   createdAt: number;
 }
 

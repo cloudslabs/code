@@ -13,7 +13,7 @@ interface AgentState {
   updateAgent: (agent: AgentNode) => void;
   addToolActivity: (activity: AgentToolActivity) => void;
   updateToolResult: (toolCallId: string, output: unknown, status: 'completed' | 'failed', durationMs: number) => void;
-  loadAgentHistory: (agents: AgentNode[], toolCalls: ToolCall[]) => void;
+  loadAgentHistory: (agents: AgentNode[], toolCalls: ToolCall[], contextSections?: Record<string, AgentContextSection[]>) => void;
   setAgentContext: (agentId: string, sections: AgentContextSection[]) => void;
   selectToolCall: (toolCallId: string | null) => void;
   selectAgent: (agentId: string | null) => void;
@@ -65,7 +65,7 @@ export const useAgentStore = create<AgentState>((set) => ({
       return { toolCalls, toolActivity };
     }),
 
-  loadAgentHistory: (agents, toolCalls) =>
+  loadAgentHistory: (agents, toolCalls, contextSections) =>
     set(() => {
       const agentMap = new Map<string, AgentNode>();
       for (const a of agents) {
@@ -95,10 +95,18 @@ export const useAgentStore = create<AgentState>((set) => ({
         callMap.set(tc.id, activity);
       }
 
+      const agentContexts = new Map<string, AgentContextSection[]>();
+      if (contextSections) {
+        for (const [agentId, sections] of Object.entries(contextSections)) {
+          agentContexts.set(agentId, sections);
+        }
+      }
+
       return {
         agents: agentMap,
         toolActivity: activityList,
         toolCalls: callMap,
+        agentContexts,
       };
     }),
 

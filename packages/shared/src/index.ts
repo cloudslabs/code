@@ -25,8 +25,9 @@ export type {
 export type { Workspace } from './types/workspace.js';
 // Backward compat aliases
 export type { Session, SessionStatus, SessionSummary, SessionListItem } from './types/session.js';
-export type { MemoryCategory, MemoryEntry, MemorySearchResult, CreateMemoryInput, UpdateMemoryInput } from './types/memory.js';
+export type { MemoryCategory, MemoryScope, MemoryEntry, MemorySearchResult, CreateMemoryInput, UpdateMemoryInput } from './types/memory.js';
 export type { ContextBudget, AgentTokenUsage, TokenUsageUpdate } from './types/context.js';
+export type { Plan, PlanStep, PlanListItem, PlanStatus, PlanStepStatus } from './types/plan.js';
 export type {
   ClientMessage, ServerMessage,
   ChatSendMessage, ChatInterruptMessage, ProjectCreateMessage, ProjectResumeMessage,
@@ -34,7 +35,10 @@ export type {
   ChatTokenMessage, ChatMessageComplete, ChatErrorMessage,
   AgentStartedMessage, AgentStoppedMessage, AgentResultMessage, AgentToolMessage, AgentToolResultMessage, AgentContextMessage,
   ContextUpdateMessage, ProjectCreatedMessage, ProjectResumedMessage, ProjectListMessage,
-  ProjectMessagesMessage, ProjectAgentsMessage, MemoryUpdatedMessage,
+  ProjectMessagesMessage, ProjectPlanMessagesMessage, ProjectAgentsMessage, MemoryUpdatedMessage,
+  PlanSendMessage, PlanInterruptMessage, PlanApproveMessage, PlanSaveMessage, PlanCancelMessage, PlanExecuteMessage,
+  PlanUpdatedMessage, PlanStepUpdatedMessage, PlanExecutionStartedMessage, PlanExecutionCompletedMessage,
+  PlanSavedMessage, PlanListMessage,
   // Backward compat aliases
   SessionCreateMessage, SessionResumeMessage,
   SessionCreatedMessage, SessionResumedMessage, SessionListMessage, SessionMessagesMessage,

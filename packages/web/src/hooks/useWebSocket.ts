@@ -6,6 +6,8 @@ import { useAgentStore } from '../stores/agent-store.js';
 import { useProjectStore } from '../stores/project-store.js';
 import { useSettingsStore } from '../stores/settings-store.js';
 import { useSetupPanelStore } from '../stores/setup-panel-store.js';
+import { usePlanPanelStore } from '../stores/plan-panel-store.js';
+import { usePlanListStore } from '../stores/plan-list-store.js';
 
 function handleMessage(message: ServerMessage): void {
   switch (message.type) {
@@ -16,6 +18,12 @@ function handleMessage(message: ServerMessage): void {
           setup.startStreaming();
         }
         setup.appendToken(message.payload.token);
+      } else if (message.payload.channel === 'plan') {
+        const plan = usePlanPanelStore.getState();
+        if (!plan.isStreaming) {
+          plan.startStreaming();
+        }
+        plan.appendToken(message.payload.token);
       } else {
         const chat = useChatStore.getState();
         if (!chat.isStreaming) {
@@ -32,19 +40,26 @@ function handleMessage(message: ServerMessage): void {
         if (setup.isStreaming && message.payload.role === 'assistant') {
           setup.finishStreaming();
         }
+      } else if (message.payload.channel === 'plan') {
+        const plan = usePlanPanelStore.getState();
+        if (plan.isStreaming && message.payload.role === 'assistant') {
+          plan.finishStreaming();
+        }
       } else {
         const chat = useChatStore.getState();
         if (chat.isStreaming && message.payload.role === 'assistant') {
           chat.finishStreaming();
         }
       }
-      // User messages are already added locally in MessageInput — don't duplicate
+      // User messages are already added locally — don't duplicate
       break;
     }
 
     case 'chat:error': {
       if (message.payload.channel === 'setup') {
         useSetupPanelStore.getState().setError(message.payload.message);
+      } else if (message.payload.channel === 'plan') {
+        usePlanPanelStore.getState().setError(message.payload.message);
       } else {
         useChatStore.getState().setError(message.payload.message);
       }
@@ -52,23 +67,42 @@ function handleMessage(message: ServerMessage): void {
     }
 
     case 'agent:started': {
-      useAgentStore.getState().addAgent(message.payload);
+      if (message.payload.channel === 'plan') {
+        usePlanPanelStore.getState().addPlanAgent(message.payload);
+      } else {
+        useAgentStore.getState().addAgent(message.payload);
+      }
       break;
     }
 
     case 'agent:stopped': {
-      useAgentStore.getState().updateAgent(message.payload);
+      if (message.payload.channel === 'plan') {
+        usePlanPanelStore.getState().updatePlanAgent(message.payload);
+      } else {
+        useAgentStore.getState().updateAgent(message.payload);
+      }
       break;
     }
 
     case 'agent:tool': {
-      useAgentStore.getState().addToolActivity(message.payload);
+      // Check if this tool activity belongs to a plan agent
+      const planAgents = usePlanPanelStore.getState().planAgents;
+      if (planAgents.has(message.payload.agentId)) {
+        usePlanPanelStore.getState().addPlanToolActivity(message.payload);
+      } else {
+        useAgentStore.getState().addToolActivity(message.payload);
+      }
       break;
     }
 
     case 'agent:tool_result': {
-      const { toolCallId, output, status, durationMs } = message.payload;
-      useAgentStore.getState().updateToolResult(toolCallId, output, status, durationMs);
+      const { toolCallId, agentId, output, status, durationMs } = message.payload;
+      const planAgentsForResult = usePlanPanelStore.getState().planAgents;
+      if (planAgentsForResult.has(agentId)) {
+        usePlanPanelStore.getState().updatePlanToolResult(toolCallId, output, status, durationMs);
+      } else {
+        useAgentStore.getState().updateToolResult(toolCallId, output, status, durationMs);
+      }
       break;
     }
 
@@ -87,10 +121,24 @@ function handleMessage(message: ServerMessage): void {
       break;
     }
 
+    case 'project:plan_messages': {
+      const mappedPlanMessages = message.payload.messages.map((m) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        agentId: m.agentId ?? 'orchestrator',
+        timestamp: m.createdAt * 1000,
+      }));
+      usePlanPanelStore.getState().loadMessages(mappedPlanMessages);
+      break;
+    }
+
     case 'project:created':
     case 'project:resumed': {
       if (message.type === 'project:resumed') {
         useAgentStore.getState().clearAgents();
+        usePlanPanelStore.getState().clearTransient();
+        usePlanListStore.getState().loadPlans(message.payload.id);
       }
       const projectStore = useProjectStore.getState();
       projectStore.setActiveProject(message.payload);
@@ -141,7 +189,7 @@ function handleMessage(message: ServerMessage): void {
     }
 
     case 'project:agents': {
-      useAgentStore.getState().loadAgentHistory(message.payload.agents, message.payload.toolCalls);
+      useAgentStore.getState().loadAgentHistory(message.payload.agents, message.payload.toolCalls, message.payload.contextSections);
       break;
     }
 
@@ -187,6 +235,39 @@ function handleMessage(message: ServerMessage): void {
           useSetupPanelStore.getState().closePanel();
         }, 800);
       }
+      break;
+    }
+
+    // Plan mode messages
+    case 'plan:updated': {
+      usePlanPanelStore.getState().setPlan(message.payload);
+      usePlanListStore.getState().updatePlanInList(message.payload);
+      break;
+    }
+
+    case 'plan:step_updated': {
+      usePlanPanelStore.getState().updatePlanStep(message.payload.planId, message.payload.step);
+      break;
+    }
+
+    case 'plan:execution_started': {
+      usePlanPanelStore.getState().setExecuting(true);
+      break;
+    }
+
+    case 'plan:execution_completed': {
+      usePlanPanelStore.getState().setExecuting(false);
+      break;
+    }
+
+    case 'plan:saved': {
+      usePlanPanelStore.getState().setPlan(message.payload);
+      usePlanListStore.getState().updatePlanInList(message.payload);
+      break;
+    }
+
+    case 'plan:list': {
+      usePlanListStore.getState().setPlans(message.payload.plans);
       break;
     }
   }

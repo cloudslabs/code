@@ -78,7 +78,7 @@ export function buildContextPackage(
     let memContent: string | null = null;
     try {
       const contextManager = getContextManager();
-      const memoryCtx = contextManager.getMemoryContext(project.workspaceId, taskDescription);
+      const memoryCtx = contextManager.getMemoryContext(project.workspaceId, taskDescription, project.id);
       if (memoryCtx) {
         parts.push(`\n\n## Project Knowledge\n${memoryCtx}`);
         memContent = memoryCtx;

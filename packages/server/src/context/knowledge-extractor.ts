@@ -61,7 +61,7 @@ class KnowledgeExtractor {
 
       let responseText = '';
       for await (const message of q) {
-        if (message.type === 'result') {
+        if (message.type === 'result' && message.subtype === 'success') {
           responseText = message.result ?? '';
         }
       }
@@ -89,6 +89,7 @@ class KnowledgeExtractor {
           category: fact.category,
           key: fact.key,
           content: fact.content,
+          scope: 'project',
         }, projectId);
 
         stored.push(fact);

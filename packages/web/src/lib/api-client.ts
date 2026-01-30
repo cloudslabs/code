@@ -44,14 +44,18 @@ export const api = {
   },
 
   // Memory
-  listMemory: (workspaceId: string, category?: string) => {
+  listMemory: (workspaceId: string, category?: string, scopeProjectId?: string) => {
     let url = `/memory?workspaceId=${workspaceId}`;
     if (category) url += `&category=${category}`;
+    if (scopeProjectId) url += `&scopeProjectId=${scopeProjectId}`;
     return request<{ entries: any[] }>(url);
   },
-  searchMemory: (workspaceId: string, q: string) =>
-    request<{ results: any[] }>(`/memory/search?workspaceId=${workspaceId}&q=${encodeURIComponent(q)}`),
-  createMemory: (data: { workspaceId: string; category: string; key: string; content: string }) =>
+  searchMemory: (workspaceId: string, q: string, scopeProjectId?: string) => {
+    let url = `/memory/search?workspaceId=${workspaceId}&q=${encodeURIComponent(q)}`;
+    if (scopeProjectId) url += `&scopeProjectId=${scopeProjectId}`;
+    return request<{ results: any[] }>(url);
+  },
+  createMemory: (data: { workspaceId: string; category: string; key: string; content: string; scope?: string }) =>
     request<any>('/memory', { method: 'POST', body: JSON.stringify(data) }),
   updateMemory: (id: string, data: Record<string, unknown>) =>
     request<any>(`/memory/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
@@ -85,6 +89,13 @@ export const api = {
       authenticated: boolean;
       authType: 'oauth' | 'api_key' | 'none';
     }>('/settings/auth/logout', { method: 'POST' }),
+
+  // Plans
+  listPlans: (projectId: string) =>
+    request<{ plans: any[] }>(`/plans?projectId=${projectId}`),
+  getPlan: (id: string) => request<any>(`/plans/${id}`),
+  deletePlan: (id: string) =>
+    request<any>(`/plans/${id}`, { method: 'DELETE' }),
 
   // Projects root directory
   getProjectsRootDir: () =>

@@ -6,6 +6,7 @@ import { getDb } from './db/database.js';
 import { getProjectManager } from './projects/project-manager.js';
 import { getOrchestrator } from './agents/orchestrator.js';
 import { getAgentManager } from './agents/agent-manager.js';
+import { getPlanManager } from './plans/plan-manager.js';
 
 export function handleClientMessage(ws: WebSocket, message: ClientMessage): void {
   switch (message.type) {
@@ -26,6 +27,24 @@ export function handleClientMessage(ws: WebSocket, message: ClientMessage): void
       break;
     case 'agent:interrupt':
       handleAgentInterrupt(ws, message.payload.agentId);
+      break;
+    case 'plan:send':
+      handlePlanSend(ws, message.payload.content, message.payload.model);
+      break;
+    case 'plan:interrupt':
+      handlePlanInterrupt(ws);
+      break;
+    case 'plan:approve':
+      handlePlanApprove(ws, message.payload.planId);
+      break;
+    case 'plan:save':
+      handlePlanSave(ws);
+      break;
+    case 'plan:cancel':
+      handlePlanCancel(ws);
+      break;
+    case 'plan:execute':
+      handlePlanExecute(ws, message.payload.planId);
       break;
     default:
       logger.warn({ type: (message as any).type }, 'Unknown message type');
@@ -121,6 +140,79 @@ async function handleSkipSetup(ws: WebSocket): Promise<void> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Plan mode handlers
+// ---------------------------------------------------------------------------
+
+async function handlePlanSend(ws: WebSocket, content: string, model?: string): Promise<void> {
+  try {
+    const orchestrator = getOrchestrator();
+    await orchestrator.handlePlanMessage(content, ws, { model });
+  } catch (err) {
+    logger.error({ err }, 'Error handling plan message');
+    sendTo(ws, {
+      type: 'chat:error',
+      payload: { message: err instanceof Error ? err.message : 'Internal error', channel: 'plan' },
+    });
+  }
+}
+
+function handlePlanInterrupt(_ws: WebSocket): void {
+  const orchestrator = getOrchestrator();
+  orchestrator.interruptPlan();
+}
+
+async function handlePlanApprove(ws: WebSocket, planId: string): Promise<void> {
+  try {
+    const orchestrator = getOrchestrator();
+    await orchestrator.approvePlan(planId, ws);
+  } catch (err) {
+    logger.error({ err }, 'Error approving plan');
+    sendTo(ws, {
+      type: 'chat:error',
+      payload: { message: err instanceof Error ? err.message : 'Plan execution failed' },
+    });
+  }
+}
+
+async function handlePlanSave(ws: WebSocket): Promise<void> {
+  try {
+    const orchestrator = getOrchestrator();
+    const plan = await orchestrator.savePlan();
+    if (plan) {
+      broadcast({ type: 'plan:saved', payload: plan });
+    }
+  } catch (err) {
+    logger.error({ err }, 'Error saving plan');
+    sendTo(ws, {
+      type: 'chat:error',
+      payload: { message: err instanceof Error ? err.message : 'Failed to save plan', channel: 'plan' },
+    });
+  }
+}
+
+function handlePlanCancel(_ws: WebSocket): void {
+  const orchestrator = getOrchestrator();
+  orchestrator.cancelPlan();
+}
+
+async function handlePlanExecute(ws: WebSocket, planId: string): Promise<void> {
+  try {
+    const orchestrator = getOrchestrator();
+    await orchestrator.executeSavedPlan(planId, ws);
+  } catch (err) {
+    logger.error({ err }, 'Error executing saved plan');
+    sendTo(ws, {
+      type: 'chat:error',
+      payload: { message: err instanceof Error ? err.message : 'Plan execution failed' },
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Project handlers
+// ---------------------------------------------------------------------------
+
 async function handleProjectResume(ws: WebSocket, projectId: string): Promise<void> {
   try {
     const projectManager = getProjectManager();
@@ -138,7 +230,7 @@ async function handleProjectResume(ws: WebSocket, projectId: string): Promise<vo
 
     sendTo(ws, { type: 'project:resumed', payload: project });
 
-    // Send stored message history
+    // Send stored message history (chat channel)
     const messages = projectManager.getMessages(projectId);
     if (messages.length > 0) {
       sendTo(ws, {
@@ -147,9 +239,18 @@ async function handleProjectResume(ws: WebSocket, projectId: string): Promise<vo
       });
     }
 
+    // Send plan messages separately
+    const planMessages = projectManager.getPlanMessages(projectId);
+    if (planMessages.length > 0) {
+      sendTo(ws, {
+        type: 'project:plan_messages',
+        payload: { projectId, messages: planMessages },
+      });
+    }
+
     // Send agent history and tool calls
     try {
-      const agents = getAgentManager().getAgentHistory(projectId);
+      const { agents, contextSections } = getAgentManager().getAgentHistoryWithContexts(projectId);
       const toolCallRows = getDb().prepare(
         `SELECT id, project_id, agent_id, tool_name, input, output, status, duration_ms, started_at, completed_at
          FROM tool_calls WHERE project_id = ? ORDER BY started_at ASC LIMIT 200`
@@ -171,7 +272,12 @@ async function handleProjectResume(ws: WebSocket, projectId: string): Promise<vo
       if (agents.length > 0 || toolCalls.length > 0) {
         sendTo(ws, {
           type: 'project:agents',
-          payload: { projectId, agents, toolCalls },
+          payload: {
+            projectId,
+            agents,
+            toolCalls,
+            ...(Object.keys(contextSections).length > 0 ? { contextSections } : {}),
+          },
         });
       }
     } catch (err) {

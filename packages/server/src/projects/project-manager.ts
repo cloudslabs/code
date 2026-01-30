@@ -90,16 +90,20 @@ class ProjectManager {
     logger.info({ projectId }, 'Project setup completed');
   }
 
-  addMessage(projectId: string, role: string, content: string, agentId?: string): StoredMessage {
-    return this.store.addMessage(projectId, role, content, agentId);
+  addMessage(projectId: string, role: string, content: string, agentId?: string, channel?: 'chat' | 'setup' | 'plan'): StoredMessage {
+    return this.store.addMessage(projectId, role, content, agentId, channel);
   }
 
-  getMessages(projectId: string): StoredMessage[] {
-    return this.store.getMessages(projectId);
+  getMessages(projectId: string, channel?: 'chat' | 'setup' | 'plan'): StoredMessage[] {
+    return this.store.getMessages(projectId, channel);
   }
 
-  getRecentMessages(projectId: string, limit?: number): StoredMessage[] {
-    return this.store.getRecentMessages(projectId, limit);
+  getRecentMessages(projectId: string, limit?: number, channel?: 'chat' | 'setup' | 'plan'): StoredMessage[] {
+    return this.store.getRecentMessages(projectId, limit, channel);
+  }
+
+  getPlanMessages(projectId: string): StoredMessage[] {
+    return this.store.getPlanMessages(projectId);
   }
 }
 

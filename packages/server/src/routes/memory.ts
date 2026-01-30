@@ -9,22 +9,28 @@ export function memoryRouter(): Router {
   router.get('/', (req, res) => {
     const workspaceId = (req.query.workspaceId ?? req.query.projectId) as string;
     const category = req.query.category as MemoryCategory | undefined;
+    const scopeProjectId = req.query.scopeProjectId as string | undefined;
     if (!workspaceId) {
       return res.status(400).json({ error: 'workspaceId required' });
     }
     const store = getMemoryStore();
-    const entries = store.listByWorkspace(workspaceId, category);
+    const entries = scopeProjectId
+      ? store.listByProject(workspaceId, scopeProjectId, category)
+      : store.listByWorkspace(workspaceId, category);
     res.json({ entries });
   });
 
   router.get('/search', (req, res) => {
     const workspaceId = (req.query.workspaceId ?? req.query.projectId) as string;
     const q = req.query.q as string;
+    const scopeProjectId = req.query.scopeProjectId as string | undefined;
     if (!workspaceId || !q) {
       return res.status(400).json({ error: 'workspaceId and q required' });
     }
     const store = getMemoryStore();
-    const results = store.search(workspaceId, q);
+    const results = scopeProjectId
+      ? store.searchByProject(workspaceId, scopeProjectId, q)
+      : store.search(workspaceId, q);
     res.json({ results });
   });
 
@@ -39,12 +45,12 @@ export function memoryRouter(): Router {
 
   router.post('/', (req, res) => {
     const workspaceId = req.body.workspaceId ?? req.body.projectId;
-    const { category, key, content } = req.body;
+    const { category, key, content, scope } = req.body;
     if (!workspaceId || !category || !key || !content) {
       return res.status(400).json({ error: 'workspaceId, category, key, and content required' });
     }
     const store = getMemoryStore();
-    const entry = store.create(workspaceId, { category, key, content });
+    const entry = store.create(workspaceId, { category, key, content, scope });
     broadcast({ type: 'memory:updated', payload: { entry, action: 'created' } });
     res.status(201).json(entry);
   });

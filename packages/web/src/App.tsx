@@ -5,9 +5,11 @@ import { SettingsModal } from './components/settings/SettingsModal.js';
 import { ProjectSettingsPanel } from './components/projects/ProjectSettingsPanel.js';
 import { ProjectSetupPanel } from './components/setup/ProjectSetupPanel.js';
 import { AgentDetailPanel } from './components/agents/AgentDetailPanel.js';
+import { PlanModePanel } from './components/plan/PlanModePanel.js';
 import { useWebSocket } from './hooks/useWebSocket.js';
 import { useProjectStore } from './stores/project-store.js';
 import { useSettingsStore } from './stores/settings-store.js';
+import { usePlanPanelStore } from './stores/plan-panel-store.js';
 import { api } from './lib/api-client.js';
 
 export function App() {
@@ -24,6 +26,18 @@ export function App() {
       .then((status) => setAuthStatus(status))
       .catch(() => setAuthStatus({ authenticated: false, authType: 'none', subscriptionType: null }));
   }, [setAuthStatus]);
+
+  // Cmd+Shift+P / Ctrl+Shift+P to toggle plan mode
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === 'p') {
+        e.preventDefault();
+        usePlanPanelStore.getState().togglePanel();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Load workspace and projects only when authenticated
   useEffect(() => {
@@ -62,6 +76,7 @@ export function App() {
       <ProjectSetupPanel />
       <ProjectSettingsPanel />
       <AgentDetailPanel />
+      <PlanModePanel />
       <SettingsModal />
     </>
   );

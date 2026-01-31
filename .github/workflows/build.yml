@@ -51,17 +51,26 @@ jobs:
           node -e "
           const fs = require('fs');
           const path = require('path');
-          const wsDir = path.join('packages', 'electron', 'node_modules', '@cloudscode');
-          if (!fs.existsSync(wsDir)) process.exit(0);
-          for (const entry of fs.readdirSync(wsDir)) {
-            const full = path.join(wsDir, entry);
-            if (fs.lstatSync(full).isSymbolicLink()) {
-              const target = fs.realpathSync(full);
-              fs.rmSync(full);
-              fs.cpSync(target, full, { recursive: true });
-              console.log('Dereferenced:', full, '->', target);
+          const electronRoot = path.resolve('packages', 'electron');
+          function derefSymlinks(dir) {
+            if (!fs.existsSync(dir)) return;
+            for (const entry of fs.readdirSync(dir)) {
+              const full = path.join(dir, entry);
+              const stat = fs.lstatSync(full);
+              if (stat.isSymbolicLink()) {
+                const real = fs.realpathSync(full);
+                if (!real.startsWith(electronRoot + path.sep)) {
+                  fs.rmSync(full);
+                  fs.cpSync(real, full, { recursive: true });
+                  console.log('Dereferenced:', full, '->', real);
+                  derefSymlinks(full);
+                }
+              } else if (stat.isDirectory() && entry !== '.pnpm') {
+                derefSymlinks(full);
+              }
             }
           }
+          derefSymlinks(path.join(electronRoot, 'node_modules'));
           "
 
       - name: Rebuild native modules for Electron

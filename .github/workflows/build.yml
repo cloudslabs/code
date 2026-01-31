@@ -80,7 +80,6 @@ jobs:
 
       - name: Rebuild native modules for Electron
         run: pnpm --filter @cloudscode/electron rebuild-native
-        if: matrix.platform != 'mac'
 
       - name: Build Electron app (macOS)
         if: matrix.platform == 'mac'

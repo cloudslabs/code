@@ -1,4 +1,5 @@
 appId: com.cloudscode.app
+artifactName: "${productName}-${version}-${arch}.${ext}"
 productName: CLouds Code
 copyright: Copyright © 2025
 
@@ -32,7 +33,7 @@ asarUnpack:
   - "**/better-sqlite3/**"
   - "**/pino-pretty/**"
 
-npmRebuild: true
+npmRebuild: false
 
 mac:
   target:

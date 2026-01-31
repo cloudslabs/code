@@ -11,6 +11,9 @@
     "rebuild-native": "electron-rebuild -f -w better-sqlite3 -m ../..",
     "rebuild-native:node": "cd ../.. && npm rebuild better-sqlite3",
     "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win",
+    "dist:linux": "electron-builder --linux",
     "clean": "rm -rf dist release"
   },
   "dependencies": {

@@ -8,7 +8,11 @@
     "dev:electron": "turbo dev --filter=@cloudscode/electron",
     "build": "turbo build",
     "lint": "turbo lint",
-    "clean": "turbo clean"
+    "clean": "turbo clean",
+    "dist": "turbo dist",
+    "dist:mac": "pnpm --filter @cloudscode/electron dist:mac",
+    "dist:win": "pnpm --filter @cloudscode/electron dist:win",
+    "dist:linux": "pnpm --filter @cloudscode/electron dist:linux"
   },
   "devDependencies": {
     "turbo": "^2.3.0",

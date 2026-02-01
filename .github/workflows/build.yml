@@ -2,10 +2,7 @@ name: Build
 
 on:
   push:
-    branches: [master]
     tags: ['v*']
-  pull_request:
-    branches: [master]
   workflow_dispatch:
 
 jobs:
@@ -38,6 +35,20 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
+
+      - name: Set version from tag
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "Setting version to $VERSION"
+          for pkg in package.json packages/*/package.json; do
+            node -e "
+              const fs = require('fs');
+              const p = JSON.parse(fs.readFileSync('$pkg','utf8'));
+              p.version = '$VERSION';
+              fs.writeFileSync('$pkg', JSON.stringify(p, null, 2) + '\n');
+            "
+          done
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -181,7 +192,7 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          draft: true
+          draft: false
           generate_release_notes: true
           files: |
             artifacts/cloudscode-macos/*

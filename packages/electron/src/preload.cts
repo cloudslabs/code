@@ -15,6 +15,13 @@ try {
       ipcRenderer.on('window:maximized-changed', handler);
       return () => ipcRenderer.removeListener('window:maximized-changed', handler);
     },
+    sendAppState: (state: unknown) => ipcRenderer.send('app:state-update', state),
+    sendNotification: (opts: unknown) => ipcRenderer.send('app:notify', opts),
+    onTrayAction: (callback: (action: string) => void) => {
+      const handler = (_event: Electron.IpcRendererEvent, action: string) => callback(action);
+      ipcRenderer.on('app:tray-action', handler);
+      return () => ipcRenderer.removeListener('app:tray-action', handler);
+    },
   });
   console.log('[preload] electronAPI exposed successfully');
 } catch (err) {

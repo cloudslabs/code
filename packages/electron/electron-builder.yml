@@ -32,6 +32,10 @@ extraResources:
     to: web-dist
     filter:
       - "**/*"
+  - from: resources/icons
+    to: icons
+    filter:
+      - "**/*.png"
 
 asar: true
 asarUnpack:

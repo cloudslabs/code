@@ -17,7 +17,8 @@
     "clean": "rm -rf dist release"
   },
   "dependencies": {
-    "@cloudscode/server": "workspace:*"
+    "@cloudscode/server": "workspace:*",
+    "@cloudscode/shared": "workspace:*"
   },
   "devDependencies": {
     "@electron/rebuild": "^3.7.0",

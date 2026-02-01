@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import net from 'node:net';
 import { fileURLToPath } from 'node:url';
+import { StateManager } from './state-manager.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
@@ -118,6 +119,8 @@ ipcMain.handle('window:isMaximized', (event) => {
 // ── App lifecycle ─────────────────────────────────────────────────────
 
 let shutdownServer: (() => void) | null = null;
+let stateManager: StateManager | null = null;
+let isQuitting = false;
 
 app.whenReady().then(async () => {
   try {
@@ -153,6 +156,9 @@ app.whenReady().then(async () => {
 
     mainWindow = await createWindow(loadUrl);
 
+    // Initialize state manager (tray, dock icons, badges, notifications)
+    stateManager = new StateManager(mainWindow);
+
     mainWindow.on('maximize', () => {
       mainWindow?.webContents.send('window:maximized-changed', true);
     });
@@ -160,11 +166,26 @@ app.whenReady().then(async () => {
       mainWindow?.webContents.send('window:maximized-changed', false);
     });
 
+    // Close-to-tray: hide window instead of closing when tray is active
+    mainWindow.on('close', (event) => {
+      if (!isQuitting && stateManager?.tray.isActive) {
+        event.preventDefault();
+        mainWindow?.hide();
+      }
+    });
+
     mainWindow.on('closed', () => {
       mainWindow = null;
     });
 
+    // Mark as quitting so close-to-tray doesn't intercept
+    app.on('before-quit', () => {
+      isQuitting = true;
+    });
+
     app.on('window-all-closed', () => {
+      stateManager?.dispose();
+      stateManager = null;
       shutdownServer?.();
       app.quit();
     });
@@ -172,6 +193,7 @@ app.whenReady().then(async () => {
     app.on('second-instance', () => {
       if (mainWindow) {
         if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
         mainWindow.focus();
       }
     });

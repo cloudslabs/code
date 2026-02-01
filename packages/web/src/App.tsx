@@ -9,6 +9,7 @@ import { PlansPanel } from './components/plan/PlansPanel.js';
 import { MemoryPanel } from './components/memory/MemoryPanel.js';
 import { TokenStatsPanel } from './components/context/TokenStatsPanel.js';
 import { useWebSocket } from './hooks/useWebSocket.js';
+import { useAppStateBridge } from './hooks/useAppStateBridge.js';
 import { useProjectStore } from './stores/project-store.js';
 import { useSettingsStore } from './stores/settings-store.js';
 import { usePlanPanelStore } from './stores/plan-panel-store.js';
@@ -16,6 +17,7 @@ import { api } from './lib/api-client.js';
 
 export function App() {
   useWebSocket();
+  useAppStateBridge();
 
   const setWorkspaceId = useProjectStore((s) => s.setWorkspaceId);
   const setProjects = useProjectStore((s) => s.setProjects);

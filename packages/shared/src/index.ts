@@ -1,3 +1,4 @@
+export type { AppStatus, AppStateUpdate, NotificationRequest } from './types/app-state.js';
 export type { AgentType, AgentStatus, AgentNode, AgentTree, AgentToolActivity, AgentContextSection, ToolCall } from './types/agent.js';
 export type {
   Project, ProjectStatus, ProjectSummary, ProjectListItem, StoredMessage,

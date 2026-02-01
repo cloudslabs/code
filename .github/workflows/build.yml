@@ -52,7 +52,46 @@ jobs:
           const fs = require('fs');
           const path = require('path');
           const electronRoot = path.resolve('packages', 'electron');
-          function derefSymlinks(dir) {
+          const electronNM = path.join(electronRoot, 'node_modules');
+
+          /* Copy transitive deps from pnpm .pnpm store to electronNM.
+             In pnpm, a package's deps are siblings in
+             .pnpm/<pkg>@<ver>/node_modules/, not nested inside the package. */
+          function installStoreDeps(realPath) {
+            const norm = realPath.split(path.sep).join('/');
+            const m = norm.match(/(.*\/\.pnpm\/[^/]+\/node_modules)\//);
+            if (!m) return;
+            const storeNM = m[1].split('/').join(path.sep);
+            for (const entry of fs.readdirSync(storeNM)) {
+              if (entry === '.package-lock.json') continue;
+              const src = path.join(storeNM, entry);
+              if (entry.startsWith('@')) {
+                let subs;
+                try { subs = fs.readdirSync(src); } catch { continue; }
+                for (const sub of subs) {
+                  const dest = path.join(electronNM, entry, sub);
+                  if (fs.existsSync(dest)) continue;
+                  const subSrc = path.join(src, sub);
+                  const st = fs.lstatSync(subSrc);
+                  const real = st.isSymbolicLink() ? fs.realpathSync(subSrc) : subSrc;
+                  fs.mkdirSync(path.join(electronNM, entry), { recursive: true });
+                  fs.cpSync(real, dest, { recursive: true });
+                  console.log('Installed dep:', entry + '/' + sub);
+                  installStoreDeps(real);
+                }
+              } else {
+                const dest = path.join(electronNM, entry);
+                if (fs.existsSync(dest)) continue;
+                const st = fs.lstatSync(src);
+                const real = st.isSymbolicLink() ? fs.realpathSync(src) : src;
+                fs.cpSync(real, dest, { recursive: true });
+                console.log('Installed dep:', entry);
+                installStoreDeps(real);
+              }
+            }
+          }
+
+          function derefSymlinks(dir, loadDeps) {
             if (!fs.existsSync(dir)) return;
             for (const entry of fs.readdirSync(dir)) {
               const full = path.join(dir, entry);
@@ -65,17 +104,19 @@ jobs:
                   if (targetStat.isDirectory()) {
                     fs.cpSync(real, full, { recursive: true });
                     console.log('Dereferenced dir:', full);
-                    derefSymlinks(full);
+                    const isWs = !real.split(path.sep).join('/').includes('/.pnpm/');
+                    if (loadDeps || isWs) installStoreDeps(real);
+                    derefSymlinks(full, loadDeps || isWs);
                   } else {
                     fs.copyFileSync(real, full);
                   }
                 }
               } else if (stat.isDirectory() && entry !== '.pnpm') {
-                derefSymlinks(full);
+                derefSymlinks(full, loadDeps);
               }
             }
           }
-          derefSymlinks(path.join(electronRoot, 'node_modules'));
+          derefSymlinks(electronNM, false);
           "
 
       - name: Rebuild native modules for Electron

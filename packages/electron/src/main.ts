@@ -1,4 +1,4 @@
-import { app, BrowserWindow, shell, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, shell, ipcMain } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import net from 'node:net';
@@ -6,6 +6,12 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = !app.isPackaged;
+
+// Match the linux executableName so the DE associates our window with the
+// .desktop file (and therefore the icon).
+if (process.platform === 'linux') {
+  app.setName('clouds-code');
+}
 
 // ── Single instance lock ──────────────────────────────────────────────
 const gotLock = app.requestSingleInstanceLock();
@@ -171,6 +177,17 @@ app.whenReady().then(async () => {
     });
   } catch (err) {
     console.error('Failed to start:', err);
+    const crashLogPath = path.join(app.getPath('userData'), 'crash.log');
+    const errorMessage = err instanceof Error
+      ? `${err.message}\n\n${err.stack}` : String(err);
+    try {
+      fs.mkdirSync(path.dirname(crashLogPath), { recursive: true });
+      fs.writeFileSync(crashLogPath,
+        `[${new Date().toISOString()}] Failed to start:\n${errorMessage}\n\n`,
+        { flag: 'a' });
+    } catch { /* ignore */ }
+    dialog.showErrorBox('CLouds Code - Failed to Start',
+      `The application failed to start.\n\n${errorMessage}\n\nCrash log: ${crashLogPath}`);
     app.quit();
   }
 });

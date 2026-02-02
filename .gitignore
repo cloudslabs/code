@@ -11,3 +11,4 @@ dist/
 .env.local
 .idea/
 packages/electron/release/
+docs/

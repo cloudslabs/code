@@ -7,7 +7,7 @@ import { createSubAgentHooksConfig } from './hooks.js';
 import { buildContextPackage } from './context-builder.js';
 import type { ContextHints } from './agent-definitions.js';
 import type { Project } from '@cloudscode/shared';
-import { getAuthInfo } from '../auth/api-key-provider.js';
+import { buildAuthEnv } from '../auth/build-env.js';
 import { broadcast } from '../ws.js';
 import { logger } from '../logger.js';
 import { resolveModelId } from './model-utils.js';
@@ -321,15 +321,5 @@ function processSubAgentMessage(message: SDKMessage, agentId: string, channel?: 
 }
 
 function buildEnv(): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const [k, v] of Object.entries(process.env)) {
-    if (v !== undefined) env[k] = v;
-  }
-
-  const auth = getAuthInfo();
-  if (auth.type === 'api_key' && auth.token) {
-    env.ANTHROPIC_API_KEY = auth.token;
-  }
-
-  return env;
+  return buildAuthEnv();
 }

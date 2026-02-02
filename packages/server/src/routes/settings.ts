@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import { spawn } from 'node:child_process';
 import type { ProjectMetadataCategory } from '@cloudscode/shared';
 import { getAuthStatus, clearOAuthCredentials } from '../auth/api-key-provider.js';
+import { startOAuthFlow, isFlowActive } from '../auth/oauth-flow.js';
 import { getProjectSettingsService } from '../services/project-settings.js';
 import { getConfig } from '../config.js';
 import { logger } from '../logger.js';
@@ -16,27 +16,22 @@ export function settingsRouter(): Router {
     res.json(status);
   });
 
-  // POST /api/settings/auth/login — spawns `claude login` to open browser OAuth flow
-  router.post('/auth/login', (_req, res) => {
+  // POST /api/settings/auth/login — starts server-side OAuth PKCE flow
+  router.post('/auth/login', async (_req, res) => {
     const status = getAuthStatus();
     if (status.authenticated) {
       res.json({ started: false, reason: 'Already authenticated' });
       return;
     }
-
+    if (isFlowActive()) {
+      res.json({ started: false, reason: 'Login already in progress' });
+      return;
+    }
     try {
-      const child = spawn('npx', ['@anthropic-ai/claude-code', 'login'], {
-        stdio: 'ignore',
-        detached: true,
-        shell: true,
-      });
-
-      child.unref();
-
-      logger.info({ pid: child.pid }, 'Spawned claude login process');
+      await startOAuthFlow();
       res.json({ started: true });
     } catch (err) {
-      logger.error({ err }, 'Failed to spawn claude login');
+      logger.error({ err }, 'Failed to start OAuth flow');
       res.status(500).json({ error: 'Failed to start login process' });
     }
   });

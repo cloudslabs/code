@@ -11,6 +11,7 @@ import { getSummaryCache } from '../context/summary-cache.js';
 import { getKnowledgeExtractor, type ExtractionComplexity } from '../context/knowledge-extractor.js';
 import { getProjectManager } from '../projects/project-manager.js';
 import { getAuthInfo, hasValidAuth } from '../auth/api-key-provider.js';
+import { buildAuthEnv } from '../auth/build-env.js';
 import { getProjectsRootDir } from '../projects/directory-manager.js';
 import { broadcast, sendTo } from '../ws.js';
 import { getDb } from '../db/database.js';
@@ -1275,17 +1276,7 @@ class Orchestrator {
   }
 
   private buildEnv(): Record<string, string> {
-    const env: Record<string, string> = {};
-    for (const [k, v] of Object.entries(process.env)) {
-      if (v !== undefined) env[k] = v;
-    }
-
-    const auth = getAuthInfo();
-    if (auth.type === 'api_key' && auth.token) {
-      env.ANTHROPIC_API_KEY = auth.token;
-    }
-
-    return env;
+    return buildAuthEnv();
   }
 
   /**

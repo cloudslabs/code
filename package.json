@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Web application wrapping Claude Agent SDK with superior context and agent management",
   "scripts": {
-    "dev": "turbo dev --filter=!@cloudscode/electron",
+    "dev": "pnpm --filter @cloudscode/server rebuild better-sqlite3 && turbo dev --filter=!@cloudscode/electron",
     "dev:electron": "turbo dev --filter=@cloudscode/electron",
     "build": "turbo build",
     "lint": "turbo lint",

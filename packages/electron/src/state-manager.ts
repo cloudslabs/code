@@ -1,7 +1,10 @@
 import { app, BrowserWindow, Notification, ipcMain, nativeImage } from 'electron';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { AppStateUpdate, AppStatus, NotificationRequest } from '@cloudscode/shared';
 import { TrayManager } from './tray-manager.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const STATUS_SUFFIXES: Record<AppStatus, string> = {
   idle: '',

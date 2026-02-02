@@ -2,7 +2,7 @@ import { z } from 'zod';
 
 const configSchema = z.object({
   PORT: z.coerce.number().default(3001),
-  HOST: z.string().default('0.0.0.0'),
+  HOST: z.string().default('127.0.0.1'),
   DATA_DIR: z.string().default('.cloudscode-data'),
   ANTHROPIC_API_KEY: z.string().optional(),
   LOG_LEVEL: z.string().default('info'),

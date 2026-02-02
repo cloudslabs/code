@@ -1,6 +1,9 @@
 import { Tray, Menu, nativeImage, BrowserWindow, app } from 'electron';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { AppStateUpdate, AppStatus } from '@cloudscode/shared';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const STATUS_LABELS: Record<AppStatus, string> = {
   idle: 'Idle',

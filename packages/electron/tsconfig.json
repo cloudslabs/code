@@ -1,19 +1,15 @@
 {
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "lib": ["ES2022"],
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true,
     "declaration": false,
+    "declarationMap": false,
     "sourceMap": true,
     "outDir": "dist",
     "rootDir": "src"
   },
   "include": ["src"],
-  "exclude": ["node_modules", "dist", "release", "src/preload.ts"]
+  "exclude": ["node_modules", "dist", "release", "src/preload.cts"],
+  "references": [
+    { "path": "../shared" }
+  ]
 }

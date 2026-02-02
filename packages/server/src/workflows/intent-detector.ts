@@ -105,7 +105,12 @@ async function aiDetect(message: string, availableTemplates: WorkflowTemplate[])
   const auth = getAuthInfo();
   if (!auth.token) return null;
 
-  const client = new Anthropic({ apiKey: auth.token });
+  let client: Anthropic;
+  if (auth.type === 'oauth') {
+    client = new Anthropic({ authToken: auth.token });
+  } else {
+    client = new Anthropic({ apiKey: auth.token });
+  }
 
   const templateList = availableTemplates.map((t) => `- ${t.id}: ${t.name} — ${t.description}`).join('\n');
 

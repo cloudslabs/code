@@ -3,6 +3,7 @@ import type { MemoryCategory, MemoryEntry } from '@cloudscode/shared';
 import { getMemoryStore } from './memory-store.js';
 import { broadcast } from '../ws.js';
 import { logger } from '../logger.js';
+import { buildAuthEnv } from '../auth/build-env.js';
 
 interface ExtractedFact {
   category: MemoryCategory;
@@ -56,6 +57,7 @@ class KnowledgeExtractor {
           model,
           maxTurns: 1,
           permissionMode: 'bypassPermissions',
+          env: buildAuthEnv(),
         },
       });
 

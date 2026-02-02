@@ -1,5 +1,7 @@
 import { PRICING } from '../constants.js';
 
+declare const crypto: { randomUUID(): string };
+
 export function generateId(): string {
   return crypto.randomUUID();
 }

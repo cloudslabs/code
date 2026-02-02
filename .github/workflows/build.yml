@@ -58,7 +58,15 @@ jobs:
 
       - name: Build Electron app (macOS)
         if: matrix.platform == 'mac'
-        run: pnpm dist:mac
+        run: |
+          # Unset empty signing vars — GitHub Actions sets missing secrets
+          # to "" which electron-builder misinterprets as a file path
+          [ -z "$CSC_LINK" ] && unset CSC_LINK
+          [ -z "$CSC_KEY_PASSWORD" ] && unset CSC_KEY_PASSWORD
+          [ -z "$APPLE_ID" ] && unset APPLE_ID
+          [ -z "$APPLE_APP_SPECIFIC_PASSWORD" ] && unset APPLE_APP_SPECIFIC_PASSWORD
+          [ -z "$APPLE_TEAM_ID" ] && unset APPLE_TEAM_ID
+          pnpm dist:mac
         env:
           CSC_LINK: ${{ secrets.MAC_CERTIFICATE_P12 }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CERTIFICATE_PASSWORD }}

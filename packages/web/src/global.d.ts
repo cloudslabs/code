@@ -13,6 +13,8 @@ interface ElectronAPI {
   onTrayAction: (callback: (action: string) => void) => () => void;
 }
 
-interface Window {
-  electronAPI?: ElectronAPI;
+declare global {
+  interface Window {
+    electronAPI?: ElectronAPI;
+  }
 }

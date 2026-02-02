@@ -1,9 +1,66 @@
+import { useState } from 'react';
 import { useSettingsStore } from '../../stores/settings-store.js';
 import { BudgetMeter } from './BudgetMeter.js';
+import { UsageHistoryChart } from './UsageHistoryChart.js';
+import { UsageSummaryCards } from './UsageSummaryCards.js';
+
+type Tab = 'session' | 'history';
 
 export function ContextDashboard() {
+  const [activeTab, setActiveTab] = useState<Tab>('session');
   const budget = useSettingsStore((s) => s.contextBudget);
 
+  return (
+    <div className="flex flex-col h-full">
+      {/* Tabs */}
+      <div className="flex border-b border-zinc-700">
+        <button
+          onClick={() => setActiveTab('session')}
+          className={`flex-1 px-4 py-2.5 text-xs font-medium transition-colors ${
+            activeTab === 'session'
+              ? 'text-zinc-100 border-b-2 border-blue-500'
+              : 'text-zinc-500 hover:text-zinc-300'
+          }`}
+        >
+          Current Session
+        </button>
+        <button
+          onClick={() => setActiveTab('history')}
+          className={`flex-1 px-4 py-2.5 text-xs font-medium transition-colors ${
+            activeTab === 'history'
+              ? 'text-zinc-100 border-b-2 border-blue-500'
+              : 'text-zinc-500 hover:text-zinc-300'
+          }`}
+        >
+          History
+        </button>
+      </div>
+
+      {/* Content */}
+      {activeTab === 'session' ? (
+        <SessionView budget={budget} />
+      ) : (
+        <HistoryView />
+      )}
+    </div>
+  );
+}
+
+function HistoryView() {
+  return (
+    <div className="p-6 space-y-6">
+      <UsageSummaryCards />
+      <div>
+        <h3 className="text-xs font-medium text-zinc-500 uppercase tracking-wide mb-3">
+          Token Usage Over Time
+        </h3>
+        <UsageHistoryChart />
+      </div>
+    </div>
+  );
+}
+
+function SessionView({ budget }: { budget: ReturnType<typeof useSettingsStore.getState>['contextBudget'] }) {
   if (!budget) {
     return (
       <div className="p-6 text-sm text-zinc-500">

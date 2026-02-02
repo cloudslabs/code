@@ -1,6 +1,7 @@
 import type { ContextBudget, TokenUsageUpdate, AgentTokenUsage } from '@cloudscode/shared';
 import { MAX_MEMORY_INJECTION_ENTRIES } from '@cloudscode/shared';
 import { getMemoryStore } from './memory-store.js';
+import { getTokenUsageStore } from '../db/token-usage-store.js';
 import { broadcast } from '../ws.js';
 import { logger } from '../logger.js';
 
@@ -27,7 +28,7 @@ class ContextManager {
     return budget;
   }
 
-  updateBudget(projectId: string, update: TokenUsageUpdate): void {
+  updateBudget(projectId: string, update: TokenUsageUpdate, meta?: { agentRunId?: string; agentType?: string }): void {
     const budget = this.getBudget(projectId);
     budget.inputTokens += update.inputTokens;
     budget.outputTokens += update.outputTokens;
@@ -38,6 +39,14 @@ class ContextManager {
 
     // Update agent breakdown
     budget.agentBreakdown = this.getAgentBreakdown(projectId);
+
+    // Persist to token_usage table
+    getTokenUsageStore().record({
+      projectId,
+      ...update,
+      agentRunId: meta?.agentRunId,
+      agentType: meta?.agentType,
+    });
 
     broadcast({ type: 'context:update', payload: budget });
     logger.debug({ projectId, totalTokens: budget.totalTokens, costUsd: budget.costUsd }, 'Budget updated');

@@ -57,7 +57,7 @@ export function TokenStatsPanel() {
 
       {/* Panel */}
       <div
-        className={`absolute top-0 right-0 h-full w-full max-w-md bg-zinc-900 border-l border-zinc-700 flex flex-col transition-transform duration-300 ease-out ${
+        className={`absolute top-0 right-0 h-full w-full max-w-2xl bg-zinc-900 border-l border-zinc-700 flex flex-col transition-transform duration-300 ease-out ${
           visible ? 'translate-x-0' : 'translate-x-full'
         }`}
       >

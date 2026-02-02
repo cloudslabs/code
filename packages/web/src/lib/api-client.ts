@@ -1,4 +1,4 @@
-import type { ProjectMetadataCategory } from '@cloudscode/shared';
+import type { ProjectMetadataCategory, TokenUsageHistoryResponse, UsageGranularity } from '@cloudscode/shared';
 
 const BASE = '/api';
 
@@ -144,4 +144,20 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify({ rootDir }),
     }),
+
+  // Token Usage History
+  getTokenUsageHistory: (projectId: string, granularity: UsageGranularity = 'daily', from?: number, to?: number) => {
+    let url = `/token-usage/${projectId}/history?granularity=${granularity}`;
+    if (from !== undefined) url += `&from=${from}`;
+    if (to !== undefined) url += `&to=${to}`;
+    return request<TokenUsageHistoryResponse>(url);
+  },
+  getTokenUsageSummary: (projectId: string, from?: number, to?: number) => {
+    let url = `/token-usage/${projectId}/summary`;
+    const params: string[] = [];
+    if (from !== undefined) params.push(`from=${from}`);
+    if (to !== undefined) params.push(`to=${to}`);
+    if (params.length > 0) url += `?${params.join('&')}`;
+    return request<{ projectId: string; totals: TokenUsageHistoryResponse['totals'] }>(url);
+  },
 };

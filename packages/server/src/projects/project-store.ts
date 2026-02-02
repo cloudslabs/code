@@ -128,6 +128,7 @@ export class ProjectStore {
 
   deleteProject(id: string): void {
     const db = getDb();
+    db.prepare('DELETE FROM token_usage WHERE project_id = ?').run(id);
     db.prepare('DELETE FROM messages WHERE project_id = ?').run(id);
     db.prepare('DELETE FROM agent_runs WHERE project_id = ?').run(id);
     db.prepare('DELETE FROM projects WHERE id = ?').run(id);

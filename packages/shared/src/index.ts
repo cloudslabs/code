@@ -27,7 +27,7 @@ export type { Workspace } from './types/workspace.js';
 // Backward compat aliases
 export type { Session, SessionStatus, SessionSummary, SessionListItem } from './types/session.js';
 export type { MemoryCategory, MemoryScope, TaskIntent, MemoryEntry, MemorySearchResult, CreateMemoryInput, UpdateMemoryInput } from './types/memory.js';
-export type { ContextBudget, AgentTokenUsage, TokenUsageUpdate } from './types/context.js';
+export type { ContextBudget, AgentTokenUsage, TokenUsageUpdate, TokenUsageRecord, UsageGranularity, TokenUsageBucket, TokenUsageHistoryResponse } from './types/context.js';
 export type { Plan, PlanStep, PlanListItem, PlanStatus, PlanStepStatus } from './types/plan.js';
 export type {
   BuiltinTemplateId, WorkflowCategory,

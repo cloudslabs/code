@@ -769,7 +769,7 @@ class Orchestrator {
               cacheReadTokens: setupCacheReadTokens,
               cacheWriteTokens: setupCacheWriteTokens,
               costUsd: result.total_cost_usd ?? 0,
-            });
+            }, { agentRunId: orchestratorNodeId, agentType: 'orchestrator' });
 
             if (fullResponse) {
               projectManager.addMessage(project.id, 'assistant', fullResponse, orchestratorNodeId);
@@ -895,7 +895,7 @@ class Orchestrator {
           cacheReadTokens: routingUsage.cacheReadTokens,
           cacheWriteTokens: routingUsage.cacheWriteTokens,
           costUsd: routingUsage.costUsd,
-        });
+        }, { agentRunId: orchestratorNode.id, agentType: 'orchestrator' });
         agentManager.updateAgentCost(orchestratorNode.id, routingUsage.costUsd, routingUsage.inputTokens + routingUsage.outputTokens);
 
         // Update summary
@@ -1042,7 +1042,7 @@ class Orchestrator {
         cacheReadTokens: totalCacheReadTokens,
         cacheWriteTokens: totalCacheWriteTokens,
         costUsd: totalCost,
-      });
+      }, { agentRunId: orchestratorNode.id, agentType: 'orchestrator' });
 
       // Update per-agent breakdown
       for (const r of results) {

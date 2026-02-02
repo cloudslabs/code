@@ -11,6 +11,7 @@ import { initPlanManager } from './plans/plan-manager.js';
 import { initWorkflowTemplateStore } from './workflows/workflow-template-store.js';
 import { initWorkflowManager } from './workflows/workflow-manager.js';
 import { initContextManager } from './context/context-manager.js';
+import { initTokenUsageStore } from './db/token-usage-store.js';
 import { initMemoryStore } from './context/memory-store.js';
 import { initWorkspaceFiles } from './workspace/workspace-files.js';
 import { initSettingsStore } from './db/settings-store.js';
@@ -36,6 +37,7 @@ export async function startServer(options?: StartServerOptions): Promise<ServerH
   initMemoryStore();
   const projectManager = initProjectManager();
   initContextManager();
+  initTokenUsageStore();
   await initWorkspaceFiles(config.PROJECT_ROOT);
   initOrchestrator(config);
   initPlanManager();

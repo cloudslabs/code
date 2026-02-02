@@ -8,6 +8,7 @@ import { settingsRouter } from './routes/settings.js';
 import { plansRouter } from './routes/plans.js';
 import { workflowsRouter } from './routes/workflows.js';
 import { promotionRouter } from './routes/promotion.js';
+import { tokenUsageRouter } from './routes/token-usage.js';
 import { logger } from './logger.js';
 
 export function createApp(staticDir?: string): express.Application {
@@ -28,6 +29,7 @@ export function createApp(staticDir?: string): express.Application {
   app.use('/api/plans', plansRouter());
   app.use('/api/workflows', workflowsRouter());
   app.use('/api/promotion', promotionRouter());
+  app.use('/api/token-usage', tokenUsageRouter());
 
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok' });

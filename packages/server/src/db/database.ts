@@ -512,6 +512,25 @@ const migrations = [
       db.exec(`INSERT INTO memory_fts(memory_fts) VALUES('rebuild')`);
     },
   },
+  {
+    name: '019_token_usage',
+    sql: `
+      CREATE TABLE token_usage (
+        id TEXT PRIMARY KEY,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        agent_run_id TEXT REFERENCES agent_runs(id) ON DELETE SET NULL,
+        agent_type TEXT,
+        input_tokens INTEGER NOT NULL DEFAULT 0,
+        output_tokens INTEGER NOT NULL DEFAULT 0,
+        cache_read_tokens INTEGER NOT NULL DEFAULT 0,
+        cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+        total_tokens INTEGER NOT NULL DEFAULT 0,
+        cost_usd REAL NOT NULL DEFAULT 0,
+        recorded_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+      CREATE INDEX idx_token_usage_project_time ON token_usage(project_id, recorded_at);
+    `,
+  },
 ];
 
 export function closeDatabase(): void {

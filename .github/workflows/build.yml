@@ -11,9 +11,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
-            platform: mac
-            arch: universal
+          # - os: macos-latest
+          #   platform: mac
+          #   arch: universal
           - os: windows-latest
             platform: win
             arch: x64
@@ -130,6 +130,5 @@ jobs:
           draft: false
           generate_release_notes: true
           files: |
-            artifacts/cloudscode-macos/*
             artifacts/cloudscode-windows/*
             artifacts/cloudscode-linux/*

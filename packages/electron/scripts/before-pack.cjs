@@ -73,7 +73,7 @@ function copySinglePackage(name, srcPath, destNm) {
       copySiblings(siblingPnpmNm, destNm);
     }
 
-    dereferenceSymlinks(destPath);
+    dereferenceSymlinks(destPath, 1);
   } else {
     fs.copyFileSync(realSrc, destPath);
   }
@@ -112,7 +112,24 @@ function copySiblings(pnpmNmDir, destNm) {
   }
 }
 
-function dereferenceSymlinks(dir) {
+// Packages excluded from the final build (see electron-builder.yml `files`).
+// No need to process these — they won't ship and can contain macOS bundles
+// with internal symlinks that cause infinite recursion (ENAMETOOLONG).
+const SKIP_PACKAGES = new Set([
+  'electron',
+  'electron-builder',
+  '@electron',
+  'typescript',
+]);
+
+// macOS bundle extensions whose internal symlinks must not be dereferenced.
+const BUNDLE_EXTS = ['.app', '.framework'];
+
+function dereferenceSymlinks(dir, depth = 0) {
+  // Skip macOS bundles — they contain internal symlinks that cause recursion
+  const base = path.basename(dir);
+  if (BUNDLE_EXTS.some((ext) => base.endsWith(ext))) return;
+
   let entries;
   try {
     entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -122,6 +139,12 @@ function dereferenceSymlinks(dir) {
 
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
+
+    // Skip dev-only packages that are excluded from the final build
+    if (depth === 0 && SKIP_PACKAGES.has(entry.name)) continue;
+
+    // Skip macOS bundles
+    if (BUNDLE_EXTS.some((ext) => entry.name.endsWith(ext))) continue;
 
     // Check the path itself (not the dirent, which may already be resolved)
     let lstat;
@@ -163,14 +186,14 @@ function dereferenceSymlinks(dir) {
         }
 
         // Recurse into the freshly-copied directory to resolve nested symlinks
-        dereferenceSymlinks(fullPath);
+        dereferenceSymlinks(fullPath, depth + 1);
       } else {
         fs.copyFileSync(realPath, fullPath);
       }
 
       console.log(`  [before-pack] resolved symlink: ${entry.name} -> ${realPath}`);
     } else if (lstat.isDirectory()) {
-      dereferenceSymlinks(fullPath);
+      dereferenceSymlinks(fullPath, depth + 1);
     }
   }
 }

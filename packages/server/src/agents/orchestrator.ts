@@ -1678,7 +1678,9 @@ class Orchestrator {
       if (refreshed) this.currentProject = refreshed;
 
       if (result.status !== 'completed') {
-        throw new Error(`Plan step ${step.id} failed`);
+        const reason = result.failureReason ?? 'unknown error';
+        step.resultSummary = reason;
+        throw new Error(`Plan step ${step.id} failed: ${reason}`);
       }
 
       return finalResponse;
@@ -1769,6 +1771,9 @@ class Orchestrator {
         } catch (err) {
           logger.error({ err, stepId: step.id }, 'Plan step execution failed');
           step.status = 'failed';
+          if (!step.resultSummary) {
+            step.resultSummary = err instanceof Error ? err.message : String(err);
+          }
           allSucceeded = false;
         }
 

@@ -22,6 +22,7 @@ export interface SubAgentResult {
   cacheReadTokens: number;
   cacheWriteTokens: number;
   status: 'completed' | 'failed' | 'interrupted';
+  failureReason?: string;
 }
 
 export interface SubAgentPlan {
@@ -180,7 +181,18 @@ export async function runSubAgent(
           cacheReadTokens = result.usage?.cache_read_input_tokens ?? 0;
           cacheWriteTokens = result.usage?.cache_creation_input_tokens ?? 0;
 
-          agentManager.updateAgentStatus(agentNode.id, 'failed');
+          // Build structured failure reason from SDK result details
+          const parts: string[] = [`subtype=${result.subtype}`];
+          if (result.num_turns != null) parts.push(`turns=${result.num_turns}`);
+          if (result.is_error) parts.push('is_error=true');
+          if (result.permission_denials?.length) {
+            parts.push(`permission_denials=${result.permission_denials.length}`);
+          }
+          const failureReason = `Agent failed: ${parts.join(', ')}`;
+
+          logger.warn({ agentId: agentNode.id, subtype: result.subtype, numTurns: result.num_turns, isError: result.is_error, permissionDenials: result.permission_denials?.length ?? 0 }, failureReason);
+
+          agentManager.updateAgentStatus(agentNode.id, 'failed', failureReason);
           return {
             agentId: agentNode.id,
             agentType: plan.agentType,
@@ -191,6 +203,7 @@ export async function runSubAgent(
             cacheReadTokens,
             cacheWriteTokens,
             status: 'failed',
+            failureReason,
           };
         }
       }
@@ -252,7 +265,8 @@ export async function runSubAgent(
       };
     }
 
-    agentManager.updateAgentStatus(agentNode.id, 'failed');
+    const failureReason = err instanceof Error ? err.message : String(err);
+    agentManager.updateAgentStatus(agentNode.id, 'failed', failureReason);
     return {
       agentId: agentNode.id,
       agentType: plan.agentType,
@@ -263,6 +277,7 @@ export async function runSubAgent(
       cacheReadTokens,
       cacheWriteTokens,
       status: 'failed',
+      failureReason,
     };
   } finally {
     abortSignal.removeEventListener('abort', onAbort);

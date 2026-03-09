@@ -122,7 +122,7 @@ function StepItem({ step, index }: { step: PlanStep; index: number }) {
         )}
 
         {step.resultSummary && (
-          <p className="text-[10px] text-zinc-500 mt-1 line-clamp-1">{step.resultSummary}</p>
+          <p className={`text-[10px] mt-1 line-clamp-2 ${step.status === 'failed' ? 'text-red-400' : 'text-zinc-500'}`}>{step.resultSummary}</p>
         )}
       </div>
     </div>
